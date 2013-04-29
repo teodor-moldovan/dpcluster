@@ -1,6 +1,5 @@
-from unittest import TestCase
+import unittest
 from dpcluster import *
-
 
 class Tests(unittest.TestCase):
     #TODO: hessians not tested
@@ -124,5 +123,172 @@ class Tests(unittest.TestCase):
         diff_ = (jac *(x2-x1)[np.newaxis,np.newaxis,:]).sum(2)
 
         np.testing.assert_array_almost_equal(diff,diff_)
+
+
+
+@unittest.skip("")
+class SlowTests(unittest.TestCase): 
+    def test_batch_vdp(self):
+
+        np.random.seed(1)
+        def gen_data(A, mu, n=10):
+            xs = np.random.multivariate_normal(mu,np.eye(mu.size),size=n)
+            ys = (np.einsum('ij,j->i',A,mu)
+                + np.random.multivariate_normal(
+                        np.zeros(A.shape[0]),np.eye(A.shape[0]),size=n))
+            
+            return np.hstack((ys,xs))
+
+
+        As = np.array([[[1,2,5],[2,2,2]],
+                       [[-4,3,-1],[2,2,2]],
+                       [[-4,3,1],[-2,-2,-2]],
+                        ])
+        mus = np.array([[10,0,0],
+                        [0,10,0],
+                        [0,0,10],
+                        ])
+
+        n = 120
+        data = np.vstack([ gen_data(A,mu,n=n) for A,mu in zip(As,mus)])
+        d = data.shape[1]
+        # can forget mus, As
+            
+        prob = VDP(GaussianNIW(d), k=50,w=.4)
+        x = prob.distr.sufficient_stats(data)
+        prob.batch_learn(x, verbose = False)
+        
+        print prob.cluster_sizes()        
+        
+        np.testing.assert_almost_equal((prob.al-1)[:3], n*np.ones(3))
+        
+        # Log likelihood of training data under model
+        print prob.ll(x)[0].sum()
+        
+
+
+    def test_ll(self):
+
+        np.random.seed(1)
+        def gen_data(A, mu, n=10):
+            xs = np.random.multivariate_normal(mu,np.eye(mu.size),size=n)
+            ys = (np.einsum('ij,j->i',A,mu)
+                + np.random.multivariate_normal(
+                        np.zeros(A.shape[0]),np.eye(A.shape[0]),size=n))
+            
+            return np.hstack((ys,xs))
+
+
+        As = np.array([[[1,2,5],[2,2,2]],
+                       [[-4,3,-1],[2,2,2]],
+                       [[-4,3,1],[-2,-2,-2]],
+                        ])
+        mus = np.array([[10,0,0],
+                        [0,10,0],
+                        [0,0,10],
+                        ])
+
+        n = 120
+        x = np.vstack([ gen_data(A,mu,n=n) for A,mu in zip(As,mus)])
+        d = x.shape[1]
+        
+        # done generating test data
+            
+        # k is the max number of clusters
+        # w is the prior parameter. 
+        prob = VDP(GaussianNIW(d), k=30,w=0.1)
+
+        xt = prob.distr.sufficient_stats(x)
+        prob.batch_learn(xt, verbose = False)
+        
+        ll , gr, hs = prob.ll(x,[True,True,True], usual_x=True)
+
+        al = 1e-10
+        x1 = al*x[1,:] -al *x[0,:] + .5 *x[0,:] + .5*x[1,:]
+        x2 = al*x[0,:] -al *x[1,:] + .5 *x[0,:] + .5*x[1,:]
+        
+        diff = (prob.ll(x2[np.newaxis,:],usual_x=True)[0] - 
+                prob.ll(x1[np.newaxis,:],usual_x=True)[0])
+
+        jac = prob.ll(.5 *x[0:1,:] + .5*x[1:2,:],
+                [False,True,False], usual_x=True)[1]
+
+        diff_ = (jac *(x2-x1)[np.newaxis,np.newaxis,:]).sum(2)
+        np.testing.assert_array_almost_equal(diff,diff_[0])
+
+
+
+    def test_resp(self):
+
+        np.random.seed(1)
+        def gen_data(A, mu, n=10):
+            xs = np.random.multivariate_normal(mu,np.eye(mu.size),size=n)
+            ys = (np.finsum('ij,j->i',A,mu)
+                + np.random.multivariate_normal(
+                        np.zeros(A.shape[0]),np.eye(A.shape[0]),size=n))
+            
+            return np.hstack((ys,xs))
+
+
+        As = np.array([[[1,2,5],[2,2,2]],
+                       [[-4,3,-1],[2,2,2]],
+                       [[-4,3,1],[-2,-2,-2]],
+                        ])
+        mus = np.array([[10,0,0],
+                        [0,10,0],
+                        [0,0,10],
+                        ])
+
+        n = 120
+        x = np.vstack([ gen_data(A,mu,n=n) for A,mu in zip(As,mus)])
+        d = x.shape[1]
+            
+        prob = VDP(GaussianNIW(d), k=30,w=0.1)
+
+        xt = prob.distr.sufficient_stats(x)
+        prob.batch_learn(xt, verbose = False)
+        
+        ps = prob.resp(x, usual_x=True,slc=[2,3,4])
+
+        grad = prob.distr.prior.log_partition(prob.tau,[False,True,False])[1]
+        print grad
+
+        ll1 = np.einsum('ki,ni->nk',prob.glp,xt)
+        mus,sgs = prob.distr.evidence.nat2usual(prob.glp[:,:-2])
+         
+        dx = x[:,np.newaxis,:] - mus[np.newaxis,:,:]
+        sgi = np.array(map(np.linalg.inv,sgs)) # this is the hessian
+        
+        # TODO: einsum wrong:
+        ll2 = -np.einsum('kij,nki,nkj->nk',.5*sgi,dx,dx)
+        
+        
+        gr = prob.glp[:,:d]
+        hs = prob.glp[:,d:d*(d+1)].reshape(-1,d,d)
+        # TODO: einsum wrong:
+        ll3 = np.einsum('ki,ni->nk', gr,x) +np.einsum('kij,ni,nj->nk',hs,x,x)
+        
+
+
+    def test_online_vdp(self):
+        
+        hvdp = OnlineVDP(GaussianNIW(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
+        
+        for t in range(1000):
+            x = np.mod(np.linspace(0,2*np.pi*3,134),2*np.pi)
+            t1 = time.time()
+            data = np.vstack((x,np.sin(x),np.cos(x))).T
+            hvdp.put(hvdp.distr.sufficient_stats(data))
+            hvdp.get_model()
+            print time.time()-t1
+
+if __name__ == '__main__':
+    single_test = 'test_batch_vdp'
+    if hasattr(SlowTests, single_test):
+        dev_suite = unittest.TestSuite()
+        dev_suite.addTest(Tests(single_test))
+        unittest.TextTestRunner().run(dev_suite)
+    else:
+        unittest.main()
 
 
