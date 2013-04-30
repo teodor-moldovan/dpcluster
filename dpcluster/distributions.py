@@ -118,9 +118,9 @@ class Gaussian(ExponentialFamilyDistribution):
 class NIW(ExponentialFamilyDistribution):
     r""" Normal Inverse Wishart distribution defined by:
     
-        :math:`f(\mu,\Sigma|\mu_0,\Psi,k) = \text{Gaussian}(\mu|\mu_0,\Sigma/k) \cdot \text{Inverse-Wishart}(\Sigma|\Psi,k-d-2)`
+        :math:`f(\mu,\Sigma|\mu_0,\Psi,k) = \text{Gaussian}(\mu|\mu_0,\Sigma/k) \cdot \text{Inverse-Wishart}(\Sigma|\Psi,\nu-d-2)`
 
-        where :math:`\mu, \mu_0 \in R^d, \Sigma, \Psi \in R^{d \times d}, k > 2d+1 \in R`
+        where :math:`\mu, \mu_0 \in R^d, \Sigma, \Psi \in R^{d \times d}, k \in R, \nu > 2d+1 \in R`
         
         This is an exponential family conjugate prior for the Gaussian.
         
