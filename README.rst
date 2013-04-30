@@ -33,9 +33,6 @@ ToDo
 
 * Implement more clustering algorithms e.g. based on Gibbs sampling, expectation propagation, stochastic gradient descent.
 * Implement more clustering distributions.
-* Re-implement algorithms to take advantage of:
-
-    * multi-core or
-    * GPU computing.
+* Re-implement algorithms to take advantage of multi-core or GPU computing.
 
 
