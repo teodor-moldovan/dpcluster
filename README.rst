@@ -1,11 +1,11 @@
 Description
 ===========
 
-dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best. Specifically, it models the data as a Dirichlet Process mixture in the exponential family. For now the only distribution implemented is the multivariate Gaussian with a Normal-Inverse-Wishart conjugate prior but extensions to other distributions are possible. You can find a good introduction to the Dirichlet Process `here <http://www.gatsby.ucl.ac.uk/~ywteh/research/npbayes/dp.pdf>`_:
+dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best. Specifically, it models the data as a Dirichlet Process mixture in the exponential family. For a tutorial see `"Dirichlet Process by Teh (2010)" <http://www.gatsby.ucl.ac.uk/~ywteh/research/npbayes/dp.pdf>`_. Currently the only distribution implemented is the multivariate Gaussian with a Normal-Inverse-Wishart conjugate prior but extensions to other distributions are possible. 
 
 Two inference algorithms are implemented:
 
-* Variational inference as described `here <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_. This is a batch algorithm that requires storing all data in memory.
+* Variational inference as described in `"Variational Inference for Dirichlet Process Mixtures" by Blei et al. (2006) <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_. This is a batch algorithm that requires storing all data in memory.
 * An experimental on-line inference algorithm that requires only O(log(n)) memory where n is the total number of observations.
 
 To install locally run::
