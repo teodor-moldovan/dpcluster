@@ -6,7 +6,11 @@ dpcluster is a package for grouping together (clustering) vectors. It automatica
 Two inference algorithms are implemented:
 
 * Variational inference as described `here <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_. This is a batch algorithm that requires storing all data in memory.
-* An experimental on-line inference algorithm that requires only O(log(n)) memory where n is the total number of observation.
+* An experimental on-line inference algorithm that requires only O(log(n)) memory where n is the total number of observations.
+
+To install locally run::
+
+    python setup.py install --user
 
 Usage
 =====
@@ -23,4 +27,15 @@ Here is a simple example to demonstrate clustering a number of random points in 
     >>> plt.show()
 
 Running this might produce 2-3 clusters depending on the randomly generated data. The adaptive nature of the Dirichlet Process mixture model becomes apparent when we increase the number of data point from ``n = 10`` to ``n = 500``. In this case the clustering algorithm will likely explain the data using only one cluster.
+
+ToDo
+====
+
+* Implement more clustering algorithms e.g. based on Gibbs sampling, expectation propagation, stochastic gradient descent.
+* Implement more clustering distributions.
+* Re-implement algorithms to take advantage of:
+
+    * multi-core or
+    * GPU computing.
+
 
