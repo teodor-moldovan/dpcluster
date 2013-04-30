@@ -1,7 +1,7 @@
 Description
 ===========
 
-dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best. Specifically, it models the data as a Dirichlet Process mixture in the exponential family. For a tutorial see `"Dirichlet Process by Teh (2010)" <http://www.gatsby.ucl.ac.uk/~ywteh/research/npbayes/dp.pdf>`_. Currently the only distribution implemented is the multivariate Gaussian with a Normal-Inverse-Wishart conjugate prior but extensions to other distributions are possible. 
+dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best. Specifically, it models the data as a Dirichlet Process mixture in the exponential family. For a tutorial see `"Dirichlet Process" by Y.W. Teh (2010) <http://www.gatsby.ucl.ac.uk/~ywteh/research/npbayes/dp.pdf>`_. Currently the only distribution implemented is the multivariate Gaussian with a Normal-Inverse-Wishart conjugate prior but extensions to other distributions are possible. 
 
 Two inference algorithms are implemented:
 

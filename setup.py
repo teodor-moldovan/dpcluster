@@ -5,13 +5,19 @@ def readme():
         return f.read()
 
 setup(name='dpcluster',
-      version='0.1',
-      description='`dpcluster` is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best based on the underlying Dirichlet Process mixture model.',
+      version='0.102',
+      description='dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best based on the underlying Dirichlet Process mixture model.',
       long_description=readme(),
-      url='https://bitbucket.org/moldovan/dpcluster',
+      classifiers=[
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: Developers',
+        'Development Status :: 2 - Pre-Alpha'
+        ],
+      url='http://dpcluster.readthedocs.org/',
+      download_url='http://bitbucket.org/moldovan/dpcluster',
       author='Teodor Mihai Moldovan',
       author_email='moldovan@cs.berkeley.edu',
-      license='MIT',
       packages=['dpcluster'],
       install_requires=[
             'numpy',
