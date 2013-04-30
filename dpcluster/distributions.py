@@ -6,27 +6,62 @@ import matplotlib.pyplot as plt
 
 #TODO: gradient and hessian information not currently used except for grad log likelihood for the NIW distribution. Consider removing extra info.
 class ExponentialFamilyDistribution:
-    """ f(x|nu) = h(x) exp( nu*x - A(nu) )
-        h is the base measure
-        nu are the parameters
-        x are the sufficient statistics
-        A is the log partition function
+    r""" Models a distribution in the exponential family of the form:
+    
+        :math:`f(x | \nu) = h(x) \exp( \nu \cdot T(x) - A(\nu) )`
+    
+        Parameters to be defined in subclasses:
+
+        * h is the base measure
+        * nu (:math:`\nu`) are the parameters
+        * T(x) are the sufficient statistics of the data
+        * A is the log partition function
     """
     #TODO: base measure assumed to be scalar. Needs to be fixed for generality.
     def log_base_measure(self,x, ret_ll_gr_hs = [True,False,False] ):
+        """
+        Log of the base measure. To be implemented by subclasses.
+
+        :arg x: sufficient statistics of the data.
+        """
         pass
     def log_partition(self,nu, ret_ll_gr_hs = [True,False,False] ):
+        """
+        Log of the partition function and derivatives with respect to sufficient statistics. To be implemented by subclasses.
+
+        :arg nu: parameters of the distribution
+        :arg ret_ll_gr_hs: what to return: log likelihood, gradient, hessian
+        """
         pass
 
     #TODO: derivatives not implemented. Consider removing
     def ll(self,xs,nus,ret_ll_gr_hs = [True,False,False]  ):
+        """
+        Log likelihood (and derivatives, optionally) of data under distribution.
+
+        :arg xs: sufficient statistics of data
+        :arg nus: parameters of distribution
+        """
         return ((np.einsum('ci,di->dc',nus,xs) 
             + self.log_base_measure(xs)[0]
             - self.log_partition(nus)[0][np.newaxis,:]  ),)
         
         
 class Gaussian(ExponentialFamilyDistribution):
-    """Multivariate Gaussian distribution
+    r"""Multivariate Gaussian distribution with density:
+
+    :math:`f(x | \mu, \Sigma) = |2 \pi \Sigma|^{-1/2} \exp(-(x-\mu)^T \Sigma^{-1} (x - \mu)/2)`
+    
+    Natural parameters:     
+
+    :math:`\nu = [\Sigma^{-1} \mu, -\Sigma^{-1}/2]`
+        
+    Sufficient statistics of data:
+    
+    :math:`T(x) = [x, x \cdot x^T]` 
+     
+    :arg d: dimension.
+
     """
     def __init__(self,d):
         self.dim = d
@@ -35,20 +70,31 @@ class Gaussian(ExponentialFamilyDistribution):
         self.slogdet = np.linalg.slogdet
 
     def sufficient_stats(self,x):
+        r""" Sufficient statistics of data.
+        :arg x: data
+        """
         tmp = (x[:,np.newaxis,:]*x[:,:,np.newaxis]).reshape(x.shape[0],-1)
         return np.hstack((x,tmp))
     def sufficient_stats_dim(self):
+        """
+        Dimension of sufficient statistics.
+        """
         d = self.dim
         return d + d*d
     def log_base_measure(self,x,ret_ll_gr_hs = [True,True,True]):
+        r""" Log base measure.
+        """
         return (self.lbm, 0.0,0.0)
     def usual2nat(self,mus, Sgs):
+        r"""Convert usual parameters to natural parameters.
+        """
         nu2 = np.array(map(self.inv,Sgs))
         nu1 = np.einsum('nij,nj->ni',nu2,mus)
         nu = np.hstack((nu1,-.5*nu2.reshape(nu2.shape[0],-1)))
         return nu
         
     def nat2usual(self,nus):
+        """Convert natural parameters to usual parameters"""
         d = self.dim
         nu1 = nus[:,:d]
         nu2 = nus[:,d:].reshape((-1,d,d))        
@@ -70,10 +116,15 @@ class Gaussian(ExponentialFamilyDistribution):
 
 
 class NIW(ExponentialFamilyDistribution):
-    """ Normal Inverse Wishart distribution defined by
-        f(mu,Sg|mu0,Psi,k) = N(mu|mu0,Sg/k) IW(Sg|Psi,k-p-2)
-        where mu, mu0 \in R^p, Sg, Psi \in R^{p \cross p}, k > 2*p+1 \in R
-        This is the exponential family conjugate prior for the Gaussian
+    r""" Normal Inverse Wishart distribution defined by:
+    
+        :math:`f(\mu,\Sigma|\mu_0,\Psi,k) = \text{Gaussian}(\mu|\mu_0,\Sigma/k) \cdot \text{Inverse-Wishart}(\Sigma|\Psi,k-d-2)`
+
+        where :math:`\mu, \mu_0 \in R^d, \Sigma, \Psi \in R^{d \times d}, k > 2d+1 \in R`
+        
+        This is an exponential family conjugate prior for the Gaussian.
+        
+        :arg d: dimension
     """
     def __init__(self,d):
         self.dim = d
@@ -181,6 +232,13 @@ class NIW(ExponentialFamilyDistribution):
         return mu0, Psi,k,nu
 
 class ConjugatePair:
+    """
+    Conjugate prior-evidence pair of distributions in the exponential family. Conjugacy means that the posterior has the same for as the prior with updated parameters.
+        
+    :arg evidence_distr: Evidence distribution. Must be an instance of :class:`ExponentialFamilyDistribution`
+    :arg prior_distr: Prior distribution. Must be an instance of :class:`ExponentialFamilyDistribution`
+    :arg prior_param: Prior parameters.
+    """
     def __init__(self,evidence_distr,prior_distr, prior_param):
         self.evidence = evidence_distr
         self.prior = prior_distr
@@ -189,6 +247,11 @@ class ConjugatePair:
         pass
     def posterior_ll(self,x,nu, ret_ll_gr_hs=[True,False,False],
             usual_x=False):
+        """ Log likelihood (and derivatives) of data under posterior predictive distribution.
+        
+        :arg x: sufficient statistics of data
+        :arg nu: prior parameters
+        """
         
         if usual_x:
             x = self.sufficient_stats(x)
@@ -226,6 +289,10 @@ class ConjugatePair:
         return self.prior.sufficient_stats_dim()
 
 class GaussianNIW(ConjugatePair):
+    """Gaussian, Normal-Inverse-Wishart conjugate pair.
+
+    :arg d: dimension
+    """
     #TODO: this is just a multivariate-T. Should have a separate class for it
     def __init__(self,d):
         # old version used 2*d+1+2, this seems to work well
