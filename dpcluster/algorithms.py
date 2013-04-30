@@ -4,18 +4,17 @@ import scipy.linalg
 import scipy.special
 
 class VDP:
-    """ Variational Dirichlet Process clustering algorithm."""
+    """ Variational Dirichlet Process clustering algorithm.
+ 
+    :param distr: likelihood-prior distribution pair governing clusters.
+    :param w: positive prior weight. The prior has as much influence as w data points.
+    :param k: maximum number of clusters.
+    :param tol: convergence tolerance.
+    """
     def __init__(self,distr, w = .1, k=50,
                 tol = 1e-5,
                 max_iters = 10000):
-        """
-        Args:
-            distr -- likelihood-prior distribution pair governing clusters
-            w -- positive prior weight. The prior has as much influence as w data points.
-            k -- the maximum number of clusters.
-            tol -- convergence tolerance
-        """
-        
+       
         self.max_iters = max_iters
         self.tol = tol
         self.distr = distr

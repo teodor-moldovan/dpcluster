@@ -6,7 +6,7 @@ def readme():
 
 setup(name='dpcluster',
       version='0.1',
-      description='Dirichlet Process clustering',
+      description='`dpcluster` is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best based on the underlying Dirichlet Process mixture model.',
       long_description=readme(),
       url='https://bitbucket.org/moldovan/dpcluster',
       author='Teodor Mihai Moldovan',
