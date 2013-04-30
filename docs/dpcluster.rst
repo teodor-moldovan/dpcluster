@@ -1,26 +1,32 @@
-dpcluster Package
-=================
-
-:mod:`dpcluster` Package
-------------------------
+`dpcluster` Package
+=======================
 
 .. automodule:: dpcluster.__init__
     :members:
     :undoc-members:
     :show-inheritance:
 
-:mod:`learning` Module
-----------------------
+:mod:`algorithms` Module
+------------------------
 
-.. automodule:: dpcluster.learning
+.. automodule:: dpcluster.algorithms
     :members:
     :undoc-members:
     :show-inheritance:
 
-Subpackages
------------
+:mod:`distributions` Module
+---------------------------
 
-.. toctree::
+.. automodule:: dpcluster.distributions
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
-    dpcluster.tests
+:mod:`test` Module
+------------------
+
+.. automodule:: dpcluster.test
+    :members:
+    :undoc-members:
+    :show-inheritance:
 

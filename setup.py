@@ -18,6 +18,7 @@ setup(name='dpcluster',
             'scipy',
             'matplotlib',
         ],
+      # py_modules=['dpcluster'],
       test_suite='nose.collector',
       tests_require=['nose'],
       zip_safe=False)

@@ -1,11 +1,10 @@
 .. dpcluster documentation master file, created by
-   sphinx-quickstart on Sun Apr 28 21:03:56 2013.
+   sphinx-quickstart on Mon Apr 29 17:43:42 2013.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
 Welcome to dpcluster's documentation!
 =====================================
-
 Contents:
 
 .. toctree::
@@ -13,6 +12,9 @@ Contents:
 
    dpcluster
 
+Introduction
+================
+.. include:: ../README.rst
 
 Indices and tables
 ==================
