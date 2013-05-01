@@ -400,7 +400,7 @@ class GaussianNIW(ConjugatePair):
 
         l1 = l1[:,slc]
         l2 = l2[:,slc,:][:,:,slc]
-        l4 = l4 - 2*(d-ds) #TODO: either *2 or *1. not sure which
+        l4 = l4 - (d-ds) #TODO: either *2 or *1. not sure which
         
         nus = np.hstack([l1,l2.reshape(l2.shape[0],-1), l3, l4])
 
