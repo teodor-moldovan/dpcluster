@@ -26,7 +26,7 @@ Here is a simple example to demonstrate clustering a number of random points in 
     >>> vdp.plot_clusters(slc=np.array([0,1]))
     >>> plt.show()
 
-Running this might produce 2-3 clusters depending on the randomly generated data. The adaptive nature of the Dirichlet Process mixture model becomes apparent when we increase the number of data point from ``n = 10`` to ``n = 500``. In this case the clustering algorithm will likely explain the data using only one cluster.
+Running this might produce 2-3 clusters depending on the randomly generated data. The adaptive nature of the Dirichlet Process mixture model becomes apparent when we increase the number of data points from ``n = 10`` to ``n = 500``. In this case the clustering algorithm will likely explain the data using only one cluster.
 
 ToDo
 ====
