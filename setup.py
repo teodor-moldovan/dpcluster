@@ -5,7 +5,7 @@ def readme():
         return f.read()
 
 setup(name='dpcluster',
-      version='0.102',
+      version='0.103',
       description='dpcluster is a package for grouping together (clustering) vectors. It automatically chooses the number of clusters that fits the data best based on the underlying Dirichlet Process mixture model.',
       long_description=readme(),
       classifiers=[

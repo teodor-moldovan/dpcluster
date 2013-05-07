@@ -2,6 +2,7 @@ import math
 import numpy as np
 import scipy.linalg
 import scipy.special
+import cache_decorator
 
 class VDP:
     """ Variational Dirichlet Process clustering algorithm following `"Variational Inference for Dirichlet Process Mixtures" by Blei et al. (2006) <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_.
@@ -92,7 +93,7 @@ class VDP:
 
 
             # e_step
-            grad = self.distr.prior.log_partition(tau,[False,True,False])[1]
+            grad = self.distr.prior.log_partition(tau,(False,True,False))[1]
             np.einsum('ki,ni->nk',grad,x,out=phi)
 
             phi /= wx[:,np.newaxis]
@@ -126,7 +127,7 @@ class VDP:
         """:return: Cluster parameters.
         """
         return self.tau
-    def ll(self,x, ret_ll_gr_hs = [True,False,False], **kwargs):
+    def ll(self,x, ret_ll_gr_hs = (True,False,False), **kwargs):
         """
         Compute the log likelihoods (ll) of data with respect to the trained model.
 
@@ -136,19 +137,13 @@ class VDP:
 
         rt = ret_ll_gr_hs
         llk,grk,hsk = self.distr.posterior_ll(x,self.tau,
-                [True,rt[1],rt[2]], **kwargs)
+             (True,rt[1],rt[2]), **kwargs)
 
         ll = None
         gr = None
         hs = None
 
-        al = self.al
-        bt = self.bt
-
-        tmp = np.log(al + bt)
-        exlv  = np.log(al) - tmp
-        exlvc = np.log(bt) - tmp
-        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
+        let = self.resp_cache(self.al,self.bt)
 
         llk +=let 
         np.exp(llk,llk)
@@ -172,31 +167,43 @@ class VDP:
         
         return (ll,gr,hs)
 
+    @cache_decorator.cached
+    def resp_cache(self,al,bt):
+        tmp = np.log(al + bt)
+        exlv  = np.log(al) - tmp
+        exlvc = np.log(bt) - tmp
+        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
+        return let
 
-    def resp(self,x, **kwargs):
+
+    def resp(self,x, ret_ll_gr_hs = (True,False,False), **kwargs):
         """
         Cluster responsabilities.
 
         :arg x: sufficient statistics of data. 
         """
-        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,
-                [True,False,False], **kwargs)
+        
+        cll,cgr,chs = ret_ll_gr_hs
+        p = None
+        gp = None
+        hp = None
 
-        al = self.al
-        bt = self.bt
+        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,(True,cgr,chs),
+                                **kwargs)
 
-        tmp = np.log(al + bt)
-        exlv  = np.log(al) - tmp
-        exlvc = np.log(bt) - tmp
-        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
+        if cll or cgr: 
+            llk += self.resp_cache(self.al,self.bt)   
+            llk -= llk.max(1)[:,np.newaxis] 
+            np.exp(llk,llk)
+            se = llk.sum(1)
+            p = llk/se[:,np.newaxis]
+        
+        if cgr:
+            mn = np.einsum('nkj,nk->nj',grk,p)
+            gp = (grk - mn[:,np.newaxis,:] )*p[:,:,np.newaxis]
 
-        llk +=let
-        llk -= llk.max(1)[:,np.newaxis] 
-        np.exp(llk,llk)
-        se = llk.sum(1)
-        p = llk/se[:,np.newaxis]
-
-        return p
+        
+        return (p,gp,hp)
 
 
     def conditional_ll(self,x,cond):
@@ -207,15 +214,15 @@ class VDP:
         :arg cond: slice representing variables to condition on
         """
 
-        ll , gr, hs = self.ll(x,[True,True,True], usual_x=True)
-        ll_ , gr_, hs_ = self.ll(x,[True,True,True], 
-                slc=cond, usual_x=True)
+        ll , gr, hs    = self.ll(x,(True,True,True), usual_x=True)
+        ll_ , gr_, hs_ = self.marginal(cond).ll(x,(True,True,True),usual_x=True)
         
         ll -= ll_
-        gr -= gr_
-        hs -= hs_
+        gr[:,slc] -= gr_
+        #line below will fail
+        #hs -= hs_
 
-        return (ll,gr,hs)
+        return (ll,gr,None)
 
     def plot_clusters(self,**kwargs):
         """
@@ -223,6 +230,16 @@ class VDP:
         """
         sz = self.cluster_sizes()
         self.distr.plot(self.tau, sz, **kwargs)
+
+    def marginal(self,slc):
+        
+        distr, tau = self.distr.marginal(self.tau,slc)
+        rv = VDP(distr)
+        rv.tau = tau
+        rv.al = self.al
+        rv.bt = self.bt
+        
+        return rv
 
 class OnlineVDP:
     """Experimental online clustering algorithm.
@@ -259,7 +276,6 @@ class OnlineVDP:
             >>> vdp = OnlineVDP(distr)
             >>> vdp.put(x)
             >>> print vdp.get_model().cluster_parameters()
- 
         """
 
         if s<len(self.xs):

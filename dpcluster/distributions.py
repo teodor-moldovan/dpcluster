@@ -3,6 +3,8 @@ import numpy as np
 import scipy.linalg
 import scipy.special
 import matplotlib.pyplot as plt
+import time
+import cache_decorator
 
 #TODO: gradient and hessian information not currently used except for grad log likelihood for the NIW distribution. Consider removing extra info.
 class ExponentialFamilyDistribution:
@@ -18,14 +20,14 @@ class ExponentialFamilyDistribution:
         * A is the log partition function
     """
     #TODO: base measure assumed to be scalar. Needs to be fixed for generality.
-    def log_base_measure(self,x, ret_ll_gr_hs = [True,False,False] ):
+    def log_base_measure(self,x, ret_ll_gr_hs = (True,False,False) ):
         """
         Log of the base measure. To be implemented by subclasses.
 
         :arg x: sufficient statistics of the data.
         """
         pass
-    def log_partition(self,nu, ret_ll_gr_hs = [True,False,False] ):
+    def log_partition(self,nu, ret_ll_gr_hs = (True,False,False) ):
         """
         Log of the partition function and derivatives with respect to sufficient statistics. To be implemented by subclasses.
 
@@ -35,7 +37,7 @@ class ExponentialFamilyDistribution:
         pass
 
     #TODO: derivatives not implemented. Consider removing
-    def ll(self,xs,nus,ret_ll_gr_hs = [True,False,False]  ):
+    def ll(self,xs,nus,ret_ll_gr_hs = (True,False,False)  ):
         """
         Log likelihood (and derivatives, optionally) of data under distribution.
 
@@ -81,7 +83,7 @@ class Gaussian(ExponentialFamilyDistribution):
         """
         d = self.dim
         return d + d*d
-    def log_base_measure(self,x,ret_ll_gr_hs = [True,True,True]):
+    def log_base_measure(self,x,ret_ll_gr_hs = (True,True,True)):
         r""" Log base measure.
         """
         return (self.lbm, 0.0,0.0)
@@ -133,9 +135,9 @@ class NIW(ExponentialFamilyDistribution):
         d = self.dim
         return d+d*d +2
 
-    def log_base_measure(self,x,ret_ll_gr_hs = [True,True,True]):
+    def log_base_measure(self,x,ret_ll_gr_hs = (True,True,True)):
         return (self.lbm, 0.0,0.0)
-    def log_partition(self,nu, ret_ll_gr_hs= [True,False,False],
+    def log_partition(self,nu, ret_ll_gr_hs= (True,False,False),
                 no_k_grad=False ):
         
         # todo: implement hessian
@@ -245,7 +247,7 @@ class ConjugatePair:
         self.prior_param = prior_param
     def sufficient_stats(self,data):
         pass
-    def posterior_ll(self,x,nu, ret_ll_gr_hs=[True,False,False],
+    def posterior_ll(self,x,nu, ret_ll_gr_hs=(True,False,False),
             usual_x=False):
         """ Log likelihood (and derivatives) of data under posterior predictive distribution.
         
@@ -264,7 +266,6 @@ class ConjugatePair:
         
         llk, grk, hsk =  self.prior.log_partition(nu_p.reshape((-1,d)),
                         ret_ll_gr_hs)
-        
 
         if ret_ll_gr_hs[0]:
             t1 = self.evidence.log_base_measure(x)[0]
@@ -290,10 +291,11 @@ class ConjugatePair:
 
 class GaussianNIW(ConjugatePair):
     """Gaussian, Normal-Inverse-Wishart conjugate pair.
+        
+    The predictive posterior is a multivariate t-distribution.
 
     :arg d: dimension
     """
-    #TODO: this is just a multivariate-T. Should have a separate class for it
     def __init__(self,d):
         # old version used 2*d+1+2, this seems to work well
         # 2*d + 1 was also a good choice but can't remember why
@@ -308,89 +310,68 @@ class GaussianNIW(ConjugatePair):
         x1 = np.insert(x1,x1.shape[1],1,axis=1)
         return x1
 
-    def posterior_ll(self,x,nu,ret_ll_gr_hs=[True,False,False],
-            usual_x=False, slc=None):
-
-        #TODO: caching
-        if not usual_x:
-            if slc is None:
-                return ConjugatePair.posterior_ll(self,x,nu,
-                    ret_ll_gr_hs=ret_ll_gr_hs,usual_x=usual_x)
-            else:       
-                # not implemented
-                return (None,None,None)
-
+    @cache_decorator.cached
+    def posterior_ll_cache(self,nu,ret_ll_gr_hs):
+        
         rt = ret_ll_gr_hs
-        ll = None
-        gr = None
-        hs = None
-        wx = np.newaxis
 
         p = self.prior.dim 
-        (mu, psi,k,nu) = self.prior.nat2usual(nu)
+        (mu, psi,k,nu0) = self.prior.nat2usual(nu)
         
-        nu = nu-p+1
+        nu = nu0-p+1
+        nu0 += 1
         psi = psi*((k+1)/k/nu)[:,np.newaxis,np.newaxis]
-
-
-        #see ftp://ftp.ecn.purdue.edu/bethel/kotz_mvt.pdf page 15
-
-        if slc is not None:
-            ind = np.zeros(p)==1
-            ind[slc] = 1.0
-            ind = np.logical_not(ind)
-
-            psi[:,ind,:] = 0
-            psi[:,:,ind] = 0
-            psi[:,ind,ind] = 1.0
-            sgi = np.array(map(np.linalg.inv,psi))
-            sgi[:,ind,:] = 0
-            sgi[:,:,ind] = 0
-
-            p -= ind.sum()
-        else:
-            sgi = np.array(map(np.linalg.inv,psi))
-
-        # the only three lines depending on x
-        dx = x[:,wx,:] - mu[wx,:,:]
-
-        # TODO: einsum wrong:
-        gr = np.einsum('kij,nkj->nki', sgi,dx)
-
-        # TODO: einsum wrong:
-        al = 1 + np.einsum('nki,nki->nk', gr,dx)/nu
-
-        if rt[1] or rt[2]:
-            bt = -(nu+p)/al/nu
+        sgi = np.array(map(np.linalg.inv,psi))
 
         if rt[0]:   
-            ll2 = - .5*(nu+p)*np.log(al)
-            ll1 = (  scipy.special.gammaln( .5*(nu+p))
+            ll0 = (  scipy.special.gammaln( .5*(nu0))
                    - scipy.special.gammaln( .5*(nu)) 
                    - .5*np.array(map(np.linalg.slogdet,psi))[:,1]
                    - .5*p*np.log(nu)
-                   )
-            ll0 = - .5*p*np.log(np.pi)
-            ll = ll2 + ll1 + ll0
+                   ) -  .5*p*np.log(np.pi)
+        else:
+            ll0 = None
+        
+        return ll0,nu,nu0,mu,sgi
+        
+    def posterior_ll(self,x,nu,ret_ll_gr_hs=(True,False,False),usual_x=False):
+
+        #cases not optimized for here
+        if not usual_x or ret_ll_gr_hs[2]:
+            return ConjugatePair.posterior_ll(self,x,nu,
+                    ret_ll_gr_hs=ret_ll_gr_hs,usual_x=usual_x)
+                
+        rt = ret_ll_gr_hs
+        ll0,nu,nu0,mu,sgi = self.posterior_ll_cache(nu,rt)
+        dx = x[:,np.newaxis,:] - mu[np.newaxis,:,:]
+
+        gr = np.einsum('kij,nkj->nki', sgi,dx)
+        al = 1 + np.einsum('nki,nki->nk', gr,dx)/nu
+
+        if rt[0]:   
+            ll = ll0 - .5*(nu0)*np.log(al)
+        else:
+            ll = None
 
         if rt[1]:   
-            gr = bt[:,:,wx]*gr
+            gr = -((nu0)/al/nu)[:,:,np.newaxis]*gr
+        else:
+            gr = None
+        
+        hs = None
 
-        #TODO: test hessian
-        if rt[2]:
-            hs = bt[:,:,wx,wx]*sgi+gr[:,:,:,wx]*gr[:,:,wx,:]/(nu+p)[wx,:,wx,wx]
         
         return (ll,gr,hs)
         
         
 
     # todo: remove:
-    def partition(self, nu,slc):
+    def marginal(self, nu,slc):
         #TODO: write a test for this
 
         d = self.prior.dim
 
-        ds = slc.size
+        ds = len(slc)
         slice_distr = GaussianNIW(ds)
 
         l1 = nu[:,:d]
