@@ -111,6 +111,7 @@ class VDP:
         self.mixture.al = al
         self.mixture.bt = bt
         self.mixture.tau = tau
+        self.mixture.lbd = lbd
 
         return self.mixture
 
@@ -124,8 +125,8 @@ class OnlineVDP:
     :param max_items: maximum queue length.
     
     """
-    def __init__(self, distr, w=.1, k = 25, tol=1e-3, max_items = 100):
-        self.distr = distr
+    def __init__(self, mixture, w=.1, k = 25, tol=1e-3, max_items = 100):
+        self.mixture = mixture
         self.w = w
         self.wm = w
         self.k = k
@@ -134,7 +135,8 @@ class OnlineVDP:
 
         self.xs = []
         self.vdps = []
-        self.dim = self.distr.sufficient_stats_dim()
+        self.distr = self.mixture.distr
+        self.dim = self.mixture.distr.sufficient_stats_dim()
         
     def put(self,r,s=0):
         """
@@ -144,7 +146,7 @@ class OnlineVDP:
 
         Basic usage example::
 
-            >>> distr = GaussianNIW(data.shape[2])
+            >>> distr = GaussianMixture(data.shape[2])
             >>> x = distr.sufficient_stats(data)
             >>> vdp = OnlineVDP(distr)
             >>> vdp.put(x)
@@ -170,15 +172,15 @@ class OnlineVDP:
             else:
                 w = self.w
             
-            proc = VDP(self.distr, w, self.k*(s+1), self.tol)
+            proc = VDP(self.mixture, w, self.k*(s+1), self.tol)
             self.vdps.append(proc)
 
         if pcs==0:
             return        
 
         for x in np.split(ar[:pcs*self.max_n,:],pcs):
-            proc.batch_learn(x,verbose=False)
-            xc = proc.tau - proc.lbd[np.newaxis,:]
+            model = proc.batch_learn(x,verbose=False)
+            xc = model.tau - model.lbd[np.newaxis,:]
             xc = xc[xc[:,-1]>1e-5]
             self.put(xc,s+1)
 
@@ -190,10 +192,8 @@ class OnlineVDP:
         """
 
         np.random.seed(1)
-        proc = VDP(self.distr, self.wm, self.k*(len(self.xs)), self.tol)
-        proc.batch_learn(np.vstack(self.xs[::-1]))
-        #print proc.al.sum()
-        return proc
+        proc = VDP(self.mixture, self.wm, self.k*(len(self.xs)), self.tol)
+        return proc.batch_learn(np.vstack(self.xs[::-1]))
         
         
 
