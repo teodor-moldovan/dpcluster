@@ -2,7 +2,7 @@ import math
 import numpy as np
 import scipy.linalg
 import scipy.special
-import cache_decorator
+from caching import cached
 
 class VDP:
     """ Variational Dirichlet Process clustering algorithm following `"Variational Inference for Dirichlet Process Mixtures" by Blei et al. (2006) <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_.
@@ -12,17 +12,17 @@ class VDP:
     :param k: maximum number of clusters.
     :param tol: convergence tolerance.
     """
-    def __init__(self,distr, w = .1, k=50,
+    def __init__(self,mixture, w = .1, k=50,
                 tol = 1e-5,
                 max_iters = 10000):
        
         self.max_iters = max_iters
         self.tol = tol
-        self.distr = distr
+        self.distr = mixture.distr
+        self.mixture = mixture
         self.w = w
         self.k = k
         d = self.distr.sufficient_stats_dim()
-
 
         self.prior = self.distr.prior_param
         self.s = np.array([0.0,0])
@@ -108,138 +108,11 @@ class VDP:
                 if diff < wt*self.tol:
                     break
 
-        self.al = al
-        self.bt = bt
-        self.tau = tau
-        self.lbd = lbd
-        self.glp = grad
-        self.elt = elt
+        self.mixture.al = al
+        self.mixture.bt = bt
+        self.mixture.tau = tau
 
-        return
-
-    def cluster_sizes(self):
-        """:return: Data weight assigned to each cluster.
-        """
-        return (self.al -1)
-        
-        
-    def cluster_parameters(self):
-        """:return: Cluster parameters.
-        """
-        return self.tau
-    def ll(self,x, ret_ll_gr_hs = (True,False,False), **kwargs):
-        """
-        Compute the log likelihoods (ll) of data with respect to the trained model.
-
-        :arg x: sufficient statistics of the data.
-        :arg ret_ll_gr_hs: what to return: likelihood, gradient, hessian. Derivatives taken with respect to data, not sufficient statistics. 
-        """
-
-        rt = ret_ll_gr_hs
-        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,
-             (True,rt[1],rt[2]), **kwargs)
-
-        ll = None
-        gr = None
-        hs = None
-
-        let = self.resp_cache(self.al,self.bt)
-
-        llk +=let 
-        np.exp(llk,llk)
-
-        se = llk.sum(1)
-        
-        if rt[0]:
-            ll = np.log(se)
-
-        if rt[1] or rt[2]:
-            p = llk/se[:,np.newaxis]
-            gr = np.einsum('nk,nki->ni',p,grk)
-        
-        if rt[2]:
-            hs1  = - gr[:,:,np.newaxis] * gr[:,np.newaxis,:]
-            hs2 = np.einsum('nk,nkij->nij',p, hsk)
-            # TODO: einsum wrong
-            hs3 = np.einsum('nk,nki,nkj->nij',p, grk, grk)
-
-            hs = hs1 + hs2 + hs3
-        
-        return (ll,gr,hs)
-
-    @cache_decorator.cached
-    def resp_cache(self,al,bt):
-        tmp = np.log(al + bt)
-        exlv  = np.log(al) - tmp
-        exlvc = np.log(bt) - tmp
-        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
-        return let
-
-
-    def resp(self,x, ret_ll_gr_hs = (True,False,False), **kwargs):
-        """
-        Cluster responsabilities.
-
-        :arg x: sufficient statistics of data. 
-        """
-        
-        cll,cgr,chs = ret_ll_gr_hs
-        p = None
-        gp = None
-        hp = None
-
-        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,(True,cgr,chs),
-                                **kwargs)
-
-        if cll or cgr: 
-            llk += self.resp_cache(self.al,self.bt)   
-            llk -= llk.max(1)[:,np.newaxis] 
-            np.exp(llk,llk)
-            se = llk.sum(1)
-            p = llk/se[:,np.newaxis]
-        
-        if cgr:
-            mn = np.einsum('nkj,nk->nj',grk,p)
-            gp = (grk - mn[:,np.newaxis,:] )*p[:,:,np.newaxis]
-
-        
-        return (p,gp,hp)
-
-
-    def conditional_ll(self,x,cond):
-        """
-        Conditional log likelihood.
-        
-        :arg x: sufficient statistics of data.
-        :arg cond: slice representing variables to condition on
-        """
-
-        ll , gr, hs    = self.ll(x,(True,True,True), usual_x=True)
-        ll_ , gr_, hs_ = self.marginal(cond).ll(x,(True,True,True),usual_x=True)
-        
-        ll -= ll_
-        gr[:,slc] -= gr_
-        #line below will fail
-        #hs -= hs_
-
-        return (ll,gr,None)
-
-    def plot_clusters(self,**kwargs):
-        """
-        Asks each cluster to plot itself. For Gaussian multidimensional clusters pass ``slc=np.array([i,j])`` as an argument to project clusters on the plane defined by the i'th and j'th coordinate.
-        """
-        sz = self.cluster_sizes()
-        self.distr.plot(self.tau, sz, **kwargs)
-
-    def marginal(self,slc):
-        
-        distr, tau = self.distr.marginal(self.tau,slc)
-        rv = VDP(distr)
-        rv.tau = tau
-        rv.al = self.al
-        rv.bt = self.bt
-        
-        return rv
+        return self.mixture
 
 class OnlineVDP:
     """Experimental online clustering algorithm.

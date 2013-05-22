@@ -1,6 +1,25 @@
 import unittest
 from dpcluster import *
 
+def grad_check(f,x,eps =1e-4):
+        
+    dx = eps*np.random.normal(size=x.size).reshape(x.shape)
+        
+    fv,g ,n = f(x)
+    f1,g_,n = f(x+.5*dx)
+    f2,g_,n = f(x-.5*dx)
+        
+    for i in range(len(g.shape)-len(dx.shape)):
+        dx = np.expand_dims(dx,1)
+        
+    dfp = (g*dx).sum(axis= len(g.shape)-1)
+    dfa = (f1-f2)
+    
+    r = dfa/dfp
+    
+    np.testing.assert_almost_equal(r,1,6)
+    
+
 class Tests(unittest.TestCase):
     #TODO: hessians not tested
     def test_gaussian(self):
@@ -107,19 +126,19 @@ class Tests(unittest.TestCase):
         nus = d.prior.usual2nat(mu0,Psi,k,nu)
 
         ll, gr, hs= ConjugatePair.posterior_ll(d,x,nus,
-                    (True,True,False),usual_x=True)
+                    (True,True,False),True)
         ll_,gr_,hs_= d.posterior_ll(x,nus,
-                    (True,True,False),usual_x=True)
+                    (True,True,False),True)
         np.testing.assert_array_almost_equal(ll,ll_)
         
         al = 1e-10
         x1 = al*x[1,:] -al *x[0,:] + .5 *x[0,:] + .5*x[1,:]
         x2 = al*x[0,:] -al *x[1,:] + .5 *x[0,:] + .5*x[1,:]
         
-        diff = (d.posterior_ll(x2[np.newaxis,:],nus,usual_x=True)[0] - 
-                d.posterior_ll(x1[np.newaxis,:],nus,usual_x=True)[0])
+        diff = (d.posterior_ll(x2[np.newaxis,:],nus,(True,False,False),True)[0] - 
+                d.posterior_ll(x1[np.newaxis,:],nus,(True,False,False),True)[0])
         jac = d.posterior_ll(.5 *x[0:1,:] + .5*x[1:2,:],nus,
-                (False,True,False), usual_x=True)[1]
+                (False,True,False), True)[1]
         diff_ = (jac *(x2-x1)[np.newaxis,np.newaxis,:]).sum(2)
 
         np.testing.assert_array_almost_equal(diff,diff_)
@@ -127,7 +146,7 @@ class Tests(unittest.TestCase):
 
     def gen_data(self,A, mu, n=10):
         xs = np.random.multivariate_normal(mu,np.eye(mu.size),size=n)
-        ys = (np.einsum('ij,j->i',A,mu)
+        ys = (np.einsum('ij,nj->ni',A,xs)
             + np.random.multivariate_normal(
                     np.zeros(A.shape[0]),np.eye(A.shape[0]),size=n))
         
@@ -147,6 +166,8 @@ class Tests(unittest.TestCase):
         n = 120
         self.nc = mus.shape[0]
         self.data = np.vstack([self.gen_data(A,mu,n=n) for A,mu in zip(As,mus)])
+        self.As=As
+        self.mus=mus
 
         
 
@@ -157,9 +178,9 @@ class Tests(unittest.TestCase):
         n,d = data.shape 
         # can forget mus, As
             
-        prob = VDP(GaussianNIW(d), k=50,w=.4)
+        prob = VDP(GaussianMixture(d), k=50,w=.4)
         x = prob.distr.sufficient_stats(data)
-        prob.batch_learn(x, verbose = False)
+        prob = prob.batch_learn(x, verbose = False)
         
         print prob.cluster_sizes()        
         
@@ -179,22 +200,22 @@ class Tests(unittest.TestCase):
             
         # k is the max number of clusters
         # w is the prior parameter. 
-        prob = VDP(GaussianNIW(d), k=30,w=0.1)
+        prob = VDP(GaussianMixture(d), k=30,w=0.1)
 
         xt = prob.distr.sufficient_stats(x)
-        prob.batch_learn(xt, verbose = False)
+        prob = prob.batch_learn(xt, verbose = False)
         
-        ll , gr, hs = prob.ll(x,(True,True,False), usual_x=True)
+        ll , gr, hs = prob.ll(x,(True,True,False))
 
         al = 1e-10
         x1 = al*x[1,:] -al *x[0,:] + .5 *x[0,:] + .5*x[1,:]
         x2 = al*x[0,:] -al *x[1,:] + .5 *x[0,:] + .5*x[1,:]
         
-        diff = (prob.ll(x2[np.newaxis,:],usual_x=True)[0] - 
-                prob.ll(x1[np.newaxis,:],usual_x=True)[0])
+        diff = (prob.ll(x2[np.newaxis,:])[0] - 
+                prob.ll(x1[np.newaxis,:])[0])
 
         jac = prob.ll(.5 *x[0:1,:] + .5*x[1:2,:],
-                (False,True,False), usual_x=True)[1]
+                (False,True,False))[1]
 
         diff_ = (jac *(x2-x1)[np.newaxis,np.newaxis,:]).sum(2)
         np.testing.assert_array_almost_equal(diff,diff_[0])
@@ -206,17 +227,17 @@ class Tests(unittest.TestCase):
         n,d = x.shape
         n/= self.nc
             
-        prob = VDP(GaussianNIW(d), k=30,w=0.1)
+        prob = VDP(GaussianMixture(d), k=30,w=0.1)
 
         xt = prob.distr.sufficient_stats(x)
-        prob.batch_learn(xt, verbose = False)
+        prob = prob.batch_learn(xt, verbose = False)
         
         slc = (2,3,4)
 
         prob = prob.marginal(slc)
         x = x[:,slc]
 
-        ps,gr,hs = prob.resp(x,(True,True,False),usual_x=True)
+        ps,gr,hs = prob.resp(x,(True,True,False))
 
         np.testing.assert_equal(
                 np.histogram(np.argmax(ps,1),range(self.nc+1))[0], n)
@@ -226,11 +247,11 @@ class Tests(unittest.TestCase):
         x1 = al*x[1,:] -al *x[0,:] + .5 *x[0,:] + .5*x[1,:]
         x2 = al*x[0,:] -al *x[1,:] + .5 *x[0,:] + .5*x[1,:]
         
-        diff = (prob.resp(x2[np.newaxis,:],usual_x=True)[0] - 
-                prob.resp(x1[np.newaxis,:],usual_x=True)[0])
+        diff = (prob.resp(x2[np.newaxis,:])[0] - 
+                prob.resp(x1[np.newaxis,:])[0])
 
         jac = prob.resp(.5 *x[0:1,:] + .5*x[1:2,:],
-                (False,True,False), usual_x=True)[1]
+                (False,True,False))[1]
 
         diff_ = (jac *(x2-x1)[np.newaxis,np.newaxis,:]).sum(2)
         r = diff/diff_
@@ -239,10 +260,34 @@ class Tests(unittest.TestCase):
 
 
 
+
+    @unittest.skipUnless(__name__== '__main__', 'still in development')
+    def test_presp(self):
+        x = self.data
+        n,d = x.shape
+        n/= self.nc
+            
+        prob = VDP(GaussianMixture(d), k=30,w=0.1)
+
+        xt = prob.distr.sufficient_stats(x)
+        prob = prob.batch_learn(xt, verbose = False)
+        
+        slc = (2,3,4)
+
+        prob = prob.marginal(slc)
+        x = x[:,slc]
+
+        ps,gr,hs = prob.pseudo_resp(x,(True,False,False))
+        ps_,gr,hs = prob.resp(x,(True,False,False))
+        print ps
+        print ps_
+
+
+
     @unittest.skipUnless(__name__== '__main__', 'still in development')
     def test_online_vdp(self):
         
-        hvdp = OnlineVDP(GaussianNIW(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
+        hvdp = OnlineVDP(GaussianMixture(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
         
         for t in range(1000):
             x = np.mod(np.linspace(0,2*np.pi*3,134),2*np.pi)
@@ -251,6 +296,59 @@ class Tests(unittest.TestCase):
             hvdp.put(hvdp.distr.sufficient_stats(data))
             hvdp.get_model()
             print time.time()-t1
+
+
+    def test_gniw_conditionals(self):
+        
+        distr = GaussianNIW(self.data.shape[1])
+
+        nus = np.vstack([distr.prior_param + distr.sufficient_stats(data).sum(0)
+            for data in self.data.reshape(self.nc,-1,self.data.shape[1])])
+        nus = np.vstack((nus,nus))
+        
+        nx = 200
+        z = np.random.normal(size = distr.prior.dim*nx 
+                ).reshape(nx,distr.prior.dim)
+        
+        iy = (0,1)
+        ix = (2,3,4)
+        x = z[:,ix]
+        
+
+        f = lambda x_: distr.conditional_expectation(x_,nus,iy,ix, 
+                        (True,True,False) )
+        
+        g = lambda x_: distr.conditional_variance(x_,nus,iy,ix, 
+                        (True,True,False) )
+
+        grad_check(f,x)
+        grad_check(g,x)
+
+
+
+    def test_vdp_conditionals(self):
+        
+        data = self.data
+        n,d = data.shape 
+        prob = VDP(GaussianMixture(d), k=50,w=.4)
+        x = prob.distr.sufficient_stats(data)
+        prob = prob.batch_learn(x, verbose = False)
+
+        nz = 200
+        z = np.random.normal(size = d*nz ).reshape(nz,d)
+        
+        iy = (0,1)
+        ix = (2,3,4)
+        x = z[:,ix]
+        
+        f = lambda x_: prob.conditional_expectation(x_,iy,ix,
+                        (True,True,False) )
+        g = lambda x_: prob.var_cond_exp(x_,iy,ix,
+                        (True,True,False) )
+
+        grad_check(f,x)
+        grad_check(g,x)
+
 
 if __name__ == '__main__':
     single_test = 'test_resp'
