@@ -65,7 +65,7 @@ class Tests(unittest.TestCase):
         nu = p - 1 + k
         
         nus = d.usual2nat(mu0,Psi,k,nu)
-        mu0_,Psi_,k_,nu_ = d.nat2usual(nus)
+        mu0_,Psi_,k_,nu_ = d.nat2usual(nus)[0]
         np.testing.assert_array_almost_equal(mu0_,mu0)
         np.testing.assert_array_almost_equal(Psi_,Psi)
         np.testing.assert_array_almost_equal(k_,k)
@@ -108,6 +108,20 @@ class Tests(unittest.TestCase):
         jac = d.log_partition(.5 *nus[0:1,:] + .5*nus[1:2,:],
                 (False,True,False))[1]
         self.assertAlmostEqual(diff, (jac.reshape(-1)*(nu2-nu1)).sum())
+
+
+        def fmu(tau):
+            (mu,Psi,k,nu),(mug,Psig,kg,nug),trs = d.nat2usual(tau,
+                    (True,True,False))
+            return mu,mug,None
+
+        def fps(tau):
+            (mu,Psi,k,nu),(mug,Psig,kg,nug),trs = d.nat2usual(tau,
+                    (True,True,False))
+            return Psi,Psig,None
+        
+        grad_check(fmu,nus,eps=1e-5)
+        grad_check(fps,nus,eps=1e-5)
         
 
     def test_gniw(self):
@@ -289,7 +303,7 @@ class Tests(unittest.TestCase):
         
         hvdp = OnlineVDP(GaussianNIW(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
         
-        for t in range(1000):
+        for t in range(10):
             x = np.mod(np.linspace(0,2*np.pi*3,134),2*np.pi)
             t1 = time.time()
             data = np.vstack((x,np.sin(x),np.cos(x))).T
@@ -349,9 +363,30 @@ class Tests(unittest.TestCase):
         grad_check(f,x)
         grad_check(g,x)
 
+    @unittest.skipUnless(__name__== '__main__', 'still in development')
+    def test_predictor(self):
+        data = self.data
+        n,d = data.shape 
+        prob = VDP(GaussianNIW(d), k=50,w=.4)
+        x = prob.distr.sufficient_stats(data)
+        prob.batch_learn(x, verbose = False)
+
+        #nz = 200
+        #z = np.random.normal(size = d*nz ).reshape(nz,d)
+        z = data
+        
+        iy = (0,1)
+        ix = (2,3,4)
+        x = z[:,ix]
+        
+        predictor = Predictor(prob,ix,iy)
+
+        g = lambda x_: predictor.predict(x_,(True,True,False) )
+
+        grad_check(g,x)
 
 if __name__ == '__main__':
-    single_test = 'test_online_vdp_'
+    single_test = 'test_predictor'
     if hasattr(Tests, single_test):
         dev_suite = unittest.TestSuite()
         dev_suite.addTest(Tests(single_test))

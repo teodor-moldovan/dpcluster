@@ -414,3 +414,117 @@ class OnlineVDP:
         
         
 
+class Predictor:
+    def __init__(self,model,ix,iy):
+        self.model = model
+        self.ix = ix
+        self.iy = iy
+
+    @cached
+    def distr_fit(self,x,lgh):
+        ix = self.ix
+        iy = self.iy
+
+        ps,psg,trash =self.model.marginal(ix).resp(x,lgh)
+        tau = np.einsum('nk,ki->ni',ps,self.model.tau) 
+        
+        if lgh[1]:
+            taug =np.einsum('nka,ki->nia',psg,self.model.tau) 
+        else:
+            taug = None
+
+        return tau,taug
+
+    @cached
+    def precomp(self,x,lgh):
+        ix = self.ix
+        iy = self.iy
+        tau,taug = self.distr_fit(x,lgh)
+        (mu,Psi,n,nu),(mug,Psig,ng,nug),trs = self.model.distr.prior.nat2usual(tau,lgh)
+
+        A,B,D = Psi[:,iy,:][:,:,iy], Psi[:,iy,:][:,:,ix], Psi[:,ix,:][:,:,ix]
+
+        Di = np.array(map(np.linalg.inv,D))
+        P = np.einsum('njk,nkl->njl',B,Di)
+
+        Li = A-np.einsum('nik,nlk->nil',P,B)
+        V1 = Li/(nu - len(ix) -1)[:,np.newaxis,np.newaxis]
+        
+        V2 = Di
+        
+        ls = mu,P,V1,V2,n
+        gr = None
+
+        
+        if lgh[1]:
+            mug = np.einsum('nia,naj->nij',mug,taug)
+            Psig = np.einsum('nija,nab->nijb',Psig,taug)
+            Bg = Psig[:,iy,:,:][:,:,ix,:]
+            Dg = Psig[:,ix,:,:][:,:,ix,:]
+            
+            
+            Pg = np.einsum('njka,nkl->njla',Bg,Di)
+            Pg -= np.einsum('njk,nkl,nlma,nmq->njqa',B,Di,Dg,Di)
+            
+            gr = (mug,Pg,None,None,None)
+        
+        return ls,gr,None
+    @cached
+    def predict(self,x,lgh): 
+
+        ix = self.ix
+        iy = self.iy
+
+        vl,gr,trs =  self.precomp(x,lgh)
+        mu,p,V1,V2,n =  vl
+        mug,pg,t1,t2,t3 =  gr
+            
+        df = x-mu[:,ix]
+        yp = (mu[:,iy] + np.einsum('nij,nj->ni',p,df))
+        
+        ypg = None
+        
+        if lgh[1]:
+            dfg  = -mug[:,ix,:]
+            dfg += np.eye(dfg.shape[1])[np.newaxis,:,:]
+            
+            ypg = (mug[:,iy,:] 
+                + np.einsum('nij,nja->nia',p,dfg) 
+                + np.einsum('nija,nj->nia',pg,df)) 
+
+        return yp,ypg,None
+
+        
+    def predict_old(self,z,lgh=(True,True,False)):
+        
+        ix = self.ix
+        iy = self.iy
+
+        x = z[:,ix]
+        y = z[:,iy]
+        dx = len(ix)
+        dy = len(iy)
+        
+        mu,exg,V1,V2,n =  self.precomp(x,lgh)[0]
+
+        yp, ypg, trs = self.predict(x,lgh)
+        
+        xi = y - yp
+
+        P = np.repeat(np.eye(dy,dy)[np.newaxis,:,:],exg.shape[0],0)
+        P = np.dstack((P,-ypg))
+
+        df = x-mu[:,ix]
+        cf = np.einsum('nj,nj->n',np.einsum('ni,nij->nj',df, V2),df )
+
+        V = V1*(1.0/n + cf)[:,np.newaxis,np.newaxis]        
+        #V = V1*(1.0+ 1.0/n + cf)[:,np.newaxis,np.newaxis]        
+
+        vi = np.array(map(np.linalg.inv,V))
+        
+        pr = np.einsum('nij,nj->ni',vi,xi)
+        ll = np.einsum('nj,nj->n',pr,xi)
+
+        return ll,xi,P,2*vi
+
+        

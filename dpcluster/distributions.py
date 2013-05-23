@@ -217,22 +217,50 @@ class NIW(ExponentialFamilyDistribution):
         return np.hstack((l1,l2.reshape(l2.shape[0],-1),l3,l4 ))
 
     @cached
-    def nat2usual(self,nu):
+    def nat2usual(self,tau,lgh=(True,False,False)):
 
         d = self.dim
-        l1 = nu[:,:d]
-        l2 = nu[:,d:-2].reshape(-1,d,d)
-        l3 = nu[:,-2]
-        l4 = nu[:,-1]
+        n,e = tau.shape
+        l1 = tau[:,:d]
+        l2 = tau[:,d:-2].reshape(-1,d,d)
+        l3 = tau[:,-2]
+        l4 = tau[:,-1]
 
         k = l3
         nu = l4 - 2 - d
-        mu0 = l1/l3[:,np.newaxis]
+        mu = l1/l3[:,np.newaxis]
         
         Psi = -l1[:,:,np.newaxis]*l1[:,np.newaxis,:]/l3[:,np.newaxis,np.newaxis]
         Psi += l2
+        
+        vs = (mu,Psi,k,nu)
+        gr = (None,None,None,None)
+        
+        if lgh[1]:  
+        
+            l1g = np.zeros((n,d,e))
+            l1g[:,:,:d]=np.eye(d)
 
-        return mu0, Psi,k,nu
+            l2g = np.zeros((n,d*d,e))
+            l2g[:,:,d:d*(d+1)]=np.eye(d*d)
+            l2g = l2g.reshape(n,d,d,e)
+            
+            kg = np.zeros((n,e))
+            kg[:,-2]=1.0
+
+            nug = np.zeros((n,e))
+            nug[:,-1]=1.0
+            
+            wx = np.newaxis
+            mug = l1g/k[:,wx,wx] - kg[:,wx,:]*l1[:,:,wx]/(k*k)[:,wx,wx]
+
+            t2 = (l1[:,:,wx,wx]*l1g[:,wx,:,:] + l1[:,wx,:,wx]*l1g[:,:,wx,:] )/l3[:,wx,wx,wx]
+            t3 = kg[:,wx,wx,:]*(l1[:,:,wx]*l1[:,wx,:]/(l3*l3)[:,wx,wx])[:,:,:,wx]
+            Psig = (l2g - t2 + t3)
+
+            gr = (mug,Psig,kg,nug)
+        
+        return vs,gr,None
 
 class ConjugatePair:
     """
@@ -315,7 +343,7 @@ class GaussianNIW(ConjugatePair):
     def posterior_ll_cache(self,nu,rt):
         
         p = self.prior.dim 
-        (mu, psi,k,nu0) = self.prior.nat2usual(nu)
+        (mu, psi,k,nu0) = self.prior.nat2usual(nu)[0]
         
         nu = nu0-p+1
         nu0 = nu0+ 1
@@ -388,7 +416,7 @@ class GaussianNIW(ConjugatePair):
         
     def plot(self, nu, szs, slc,n = 100,):
 
-        nuE = self.prior.nat2usual(nu[szs>0,:])
+        nuE = self.prior.nat2usual(nu[szs>0,:])[0]
         d = self.prior.dim
         mus, Sgs, k, nu = nuE
 
@@ -412,7 +440,7 @@ class GaussianNIW(ConjugatePair):
     @cached
     def conditionals_cache(self,nus,i1,i2):
          
-        mu,Psi,n,nu = self.prior.nat2usual(nus)
+        mu,Psi,n,nu = self.prior.nat2usual(nus)[0]
         my,mx = mu[:,i1],mu[:,i2]
 
         A,B,D = Psi[:,i1,:][:,:,i1], Psi[:,i1,:][:,:,i2], Psi[:,i2,:][:,:,i2]
@@ -457,6 +485,7 @@ class GaussianNIW(ConjugatePair):
 
 
 
+# not in use
 class MixtureModel(object):
     def __init__(self,distr):
         self.distr = distr
@@ -676,6 +705,7 @@ class MixtureModel(object):
         return vf, vfg, None
 
 
+# not is use
 class GaussianMixture(MixtureModel):
     def __init__(self,d):
         MixtureModel.__init__(self,GaussianNIW(d))
