@@ -178,9 +178,9 @@ class Tests(unittest.TestCase):
         n,d = data.shape 
         # can forget mus, As
             
-        prob = VDP(GaussianMixture(d), k=50,w=.4)
+        prob = VDP(GaussianNIW(d), k=50,w=.4)
         x = prob.distr.sufficient_stats(data)
-        prob = prob.batch_learn(x, verbose = False)
+        prob.batch_learn(x, verbose = False)
         
         print prob.cluster_sizes()        
         
@@ -200,10 +200,10 @@ class Tests(unittest.TestCase):
             
         # k is the max number of clusters
         # w is the prior parameter. 
-        prob = VDP(GaussianMixture(d), k=30,w=0.1)
+        prob = VDP(GaussianNIW(d), k=30,w=0.1)
 
         xt = prob.distr.sufficient_stats(x)
-        prob = prob.batch_learn(xt, verbose = False)
+        prob.batch_learn(xt, verbose = False)
         
         ll , gr, hs = prob.ll(x,(True,True,False))
 
@@ -227,10 +227,10 @@ class Tests(unittest.TestCase):
         n,d = x.shape
         n/= self.nc
             
-        prob = VDP(GaussianMixture(d), k=30,w=0.1)
+        prob = VDP(GaussianNIW(d), k=30,w=0.1)
 
         xt = prob.distr.sufficient_stats(x)
-        prob = prob.batch_learn(xt, verbose = False)
+        prob.batch_learn(xt, verbose = False)
         
         slc = (2,3,4)
 
@@ -267,10 +267,10 @@ class Tests(unittest.TestCase):
         n,d = x.shape
         n/= self.nc
             
-        prob = VDP(GaussianMixture(d), k=30,w=0.1)
+        prob = VDP(GaussianNIW(d), k=30,w=0.1)
 
         xt = prob.distr.sufficient_stats(x)
-        prob = prob.batch_learn(xt, verbose = False)
+        prob.batch_learn(xt, verbose = False)
         
         slc = (2,3,4)
 
@@ -287,7 +287,7 @@ class Tests(unittest.TestCase):
     @unittest.skipUnless(__name__== '__main__', 'still in development')
     def test_online_vdp(self):
         
-        hvdp = OnlineVDP(GaussianMixture(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
+        hvdp = OnlineVDP(GaussianNIW(3), w=1e-2, k = 20, tol=1e-3, max_items = 100 )
         
         for t in range(1000):
             x = np.mod(np.linspace(0,2*np.pi*3,134),2*np.pi)
@@ -330,9 +330,9 @@ class Tests(unittest.TestCase):
         
         data = self.data
         n,d = data.shape 
-        prob = VDP(GaussianMixture(d), k=50,w=.4)
+        prob = VDP(GaussianNIW(d), k=50,w=.4)
         x = prob.distr.sufficient_stats(data)
-        prob = prob.batch_learn(x, verbose = False)
+        prob.batch_learn(x, verbose = False)
 
         nz = 200
         z = np.random.normal(size = d*nz ).reshape(nz,d)
@@ -351,7 +351,7 @@ class Tests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    single_test = 'test_resp'
+    single_test = 'test_online_vdp_'
     if hasattr(Tests, single_test):
         dev_suite = unittest.TestSuite()
         dev_suite.addTest(Tests(single_test))

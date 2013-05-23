@@ -4,7 +4,7 @@ import scipy.linalg
 import scipy.special
 from caching import cached
 
-class VDP:
+class VDP(object):
     """ Variational Dirichlet Process clustering algorithm following `"Variational Inference for Dirichlet Process Mixtures" by Blei et al. (2006) <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_.
  
     :param distr: likelihood-prior distribution pair governing clusters. For now the only option is using a instance of :class:`dpcluster.distributions.GaussianNIW`.
@@ -12,14 +12,13 @@ class VDP:
     :param k: maximum number of clusters.
     :param tol: convergence tolerance.
     """
-    def __init__(self,mixture, w = .1, k=50,
+    def __init__(self,distr, w = .1, k=50,
                 tol = 1e-5,
                 max_iters = 10000):
        
         self.max_iters = max_iters
         self.tol = tol
-        self.distr = mixture.distr
-        self.mixture = mixture
+        self.distr = distr
         self.w = w
         self.k = k
         d = self.distr.sufficient_stats_dim()
@@ -108,12 +107,230 @@ class VDP:
                 if diff < wt*self.tol:
                     break
 
-        self.mixture.al = al
-        self.mixture.bt = bt
-        self.mixture.tau = tau
-        self.mixture.lbd = lbd
+        self.al = al
+        self.bt = bt
+        self.tau = tau
+        self.lbd = lbd
+        self.glp = grad
+        self.elt = elt
 
-        return self.mixture
+        return
+
+    def cluster_sizes(self):
+        """:return: Data weight assigned to each cluster.
+        """
+        return (self.al -1)
+        
+        
+    def cluster_parameters(self):
+        """:return: Cluster parameters.
+        """
+        return self.tau
+    def ll(self,x, ret_ll_gr_hs = (True,False,False)):
+        """
+        Compute the log likelihoods (ll) of data with respect to the trained model.
+
+        :arg x: sufficient statistics of the data.
+        :arg ret_ll_gr_hs: what to return: likelihood, gradient, hessian. Derivatives taken with respect to data, not sufficient statistics. 
+        """
+
+        rt = ret_ll_gr_hs
+        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,
+             (True,rt[1],rt[2]), True)
+
+        ll = None
+        gr = None
+        hs = None
+
+        let = self.resp_cache(self.al,self.bt)
+
+        llk = llk+let 
+        np.exp(llk,llk)
+
+        se = llk.sum(1)
+        
+        if rt[0]:
+            ll = np.log(se)
+
+        if rt[1] or rt[2]:
+            p = llk/se[:,np.newaxis]
+            gr = np.einsum('nk,nki->ni',p,grk)
+        
+        if rt[2]:
+            hs1  = - gr[:,:,np.newaxis] * gr[:,np.newaxis,:]
+            hs2 = np.einsum('nk,nkij->nij',p, hsk)
+            # TODO: einsum wrong
+            hs3 = np.einsum('nk,nki,nkj->nij',p, grk, grk)
+
+            hs = hs1 + hs2 + hs3
+        
+        return (ll,gr,hs)
+
+    @cached
+    def resp_cache(self,al,bt):
+        tmp = np.log(al + bt)
+        exlv  = np.log(al) - tmp
+        exlvc = np.log(bt) - tmp
+        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
+        return let
+
+
+    @cached
+    def pseudo_resp_cache(self,al,bt):
+        tmp = scipy.special.psi(al + bt)
+        exlv  = (scipy.special.psi(al) - tmp)
+        exlvc = (scipy.special.psi(bt) - tmp)
+
+        elt = (exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]]))
+
+
+        return elt
+
+
+    @cached
+    def resp(self,x, ret_ll_gr_hs = (True,False,False)):
+        """
+        Cluster responsabilities.
+
+        :arg x: sufficient statistics of data. 
+        """
+        
+        cll,cgr,chs = ret_ll_gr_hs
+        p = None
+        gp = None
+        hp = None
+
+        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,(True,cgr,chs),True)
+
+        if cll or cgr: 
+            llk = llk + self.resp_cache(self.al,self.bt)   
+            llk -= llk.max(1)[:,np.newaxis] 
+            np.exp(llk,llk)
+            se = llk.sum(1)
+            p = llk/se[:,np.newaxis]
+        
+        if cgr:
+            mn = np.einsum('nkj,nk->nj',grk,p)
+            gp = (grk - mn[:,np.newaxis,:] )*p[:,:,np.newaxis]
+
+        return (p,gp,hp)
+
+
+    @cached
+    def pseudo_resp(self,x, ret_ll_gr_hs = (True,False,False)):
+        
+        cll,cgr,chs = ret_ll_gr_hs
+        p = None
+        gp = None
+        hp = None
+
+        grad = self.distr.prior.log_partition(self.tau,(False,True,False))[1]
+        llk = np.einsum('ki,ni->nk',grad,self.distr.sufficient_stats(x))
+
+        llk += self.pseudo_resp_cache(self.al,self.bt)   
+        llk -= llk.max(1)[:,np.newaxis] 
+        np.exp(llk,llk)
+        se = llk.sum(1)
+        p = llk/se[:,np.newaxis]
+
+        return (p,None,None)
+
+
+    def conditional_ll(self,x,cond):
+        """
+        Conditional log likelihood.
+        
+        :arg x: sufficient statistics of data.
+        :arg cond: slice representing variables to condition on
+        """
+
+        ll , gr, hs    = self.ll(x,(True,True,True), usual_x=True)
+        ll_ , gr_, hs_ = self.marginal(cond).ll(x,(True,True,True),usual_x=True)
+        
+        ll -= ll_
+        gr[:,slc] -= gr_
+        #line below will fail
+        #hs -= hs_
+
+        return (ll,gr,None)
+
+    def plot_clusters(self,**kwargs):
+        """
+        Asks each cluster to plot itself. For Gaussian multidimensional clusters pass ``slc=np.array([i,j])`` as an argument to project clusters on the plane defined by the i'th and j'th coordinate.
+        """
+        sz = self.cluster_sizes()
+        self.distr.plot(self.tau, sz, **kwargs)
+
+    @cached
+    def marginal(self,slc):
+        
+        distr, tau = self.distr.marginal(self.tau,slc)
+        rv = type(self)(distr)
+        rv.tau = tau
+        rv.al = self.al
+        rv.bt = self.bt
+        
+        return rv
+
+    @cached
+    def conditional_expectation(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
+        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
+
+        ex, exg, trash = self.distr.conditional_expectation(x,self.tau,iy,ix,
+                        ret_ll_gr_hs)
+        
+        ef = np.einsum('nki,nk->ni',ex,ps)
+        efg = np.einsum('nka,nki->nia',psg,ex)+np.einsum('nk,nkia->nia',ps,exg)
+        #efg = np.einsum('nka,nki->nia',psg,ex)+np.einsum('nk,nkia->nia',ps,exg)
+
+        
+        return ef,efg,None
+        
+    def conditional_variance(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
+        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
+
+        ex, exg, trash = self.distr.conditional_expectation(x,self.tau,iy,ix,
+                        ret_ll_gr_hs)
+
+        vr, vrg, trash = self.distr.conditional_variance(x,self.tau,iy,ix,
+                        ret_ll_gr_hs)
+        
+        ef, efg, trash = self.conditional_expectation(x,iy,ix,ret_ll_gr_hs) 
+        
+        de = ex - ef[:,np.newaxis,:]
+        vt = de[:,:,:,np.newaxis]*de[:,:,np.newaxis,:]
+        vs = vt+vr
+        vf = np.einsum('nk,nkij->nij',ps,vs)
+        
+        deg = exg - efg[:,np.newaxis,:,:]
+
+        vsg  =  de[:,:,np.newaxis,:,np.newaxis] * deg[:,:,:,np.newaxis,:]
+        vsg +=  de[:,:,:,np.newaxis,np.newaxis] * deg[:,:,np.newaxis,:,:]
+        vsg += vrg
+        
+        vfg  = np.einsum('nk,nkija->nija',ps,vsg) 
+        vfg += np.einsum('nka,nkij->nija',psg,vs)
+
+        return vf, vfg, None
+
+    def var_cond_exp(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
+        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
+
+        vr, vrg, trash = self.distr.conditional_variance(x,self.tau,iy,ix,
+                        ret_ll_gr_hs)
+        ps2 = ps*ps
+        
+        vf = np.einsum('nk,nkij->nij',ps2,vr)
+        
+        vfg = None
+
+        if ret_ll_gr_hs[1]:
+            vfg  = np.einsum('nk,nkija->nija',ps2,vrg) 
+            vfg += 2*np.einsum('nka,nk,nkij->nija',psg,ps,vr)
+
+        return vf, vfg, None
+
+
 
 class OnlineVDP:
     """Experimental online clustering algorithm.
@@ -125,8 +342,8 @@ class OnlineVDP:
     :param max_items: maximum queue length.
     
     """
-    def __init__(self, mixture, w=.1, k = 25, tol=1e-3, max_items = 100):
-        self.mixture = mixture
+    def __init__(self, distr, w=.1, k = 25, tol=1e-3, max_items = 100):
+        self.distr = distr
         self.w = w
         self.wm = w
         self.k = k
@@ -135,8 +352,7 @@ class OnlineVDP:
 
         self.xs = []
         self.vdps = []
-        self.distr = self.mixture.distr
-        self.dim = self.mixture.distr.sufficient_stats_dim()
+        self.dim = self.distr.sufficient_stats_dim()
         
     def put(self,r,s=0):
         """
@@ -146,7 +362,7 @@ class OnlineVDP:
 
         Basic usage example::
 
-            >>> distr = GaussianMixture(data.shape[2])
+            >>> distr = GaussianNIW(data.shape[2])
             >>> x = distr.sufficient_stats(data)
             >>> vdp = OnlineVDP(distr)
             >>> vdp.put(x)
@@ -172,15 +388,15 @@ class OnlineVDP:
             else:
                 w = self.w
             
-            proc = VDP(self.mixture, w, self.k*(s+1), self.tol)
+            proc = VDP(self.distr, w, self.k*(s+1), self.tol)
             self.vdps.append(proc)
 
         if pcs==0:
             return        
 
         for x in np.split(ar[:pcs*self.max_n,:],pcs):
-            model = proc.batch_learn(x,verbose=False)
-            xc = model.tau - model.lbd[np.newaxis,:]
+            proc.batch_learn(x,verbose=False)
+            xc = proc.tau - proc.lbd[np.newaxis,:]
             xc = xc[xc[:,-1]>1e-5]
             self.put(xc,s+1)
 
@@ -192,8 +408,9 @@ class OnlineVDP:
         """
 
         np.random.seed(1)
-        proc = VDP(self.mixture, self.wm, self.k*(len(self.xs)), self.tol)
-        return proc.batch_learn(np.vstack(self.xs[::-1]))
+        proc = VDP(self.distr, self.wm, self.k*(len(self.xs)), self.tol)
+        proc.batch_learn(np.vstack(self.xs[::-1]))
+        return proc
         
         
 
