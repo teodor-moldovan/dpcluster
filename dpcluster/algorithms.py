@@ -448,7 +448,8 @@ class Predictor:
         P = np.einsum('njk,nkl->njl',B,Di)
 
         Li = A-np.einsum('nik,nlk->nil',P,B)
-        V1 = Li/(nu - len(ix) -1)[:,np.newaxis,np.newaxis]
+        tmp = (nu - Li.shape[1] -1)
+        V1 = Li/tmp[:,np.newaxis,np.newaxis]
         
         V2 = Di
         
@@ -495,7 +496,7 @@ class Predictor:
         return yp,ypg,None
 
         
-    def predict_old(self,z,lgh=(True,True,False)):
+    def predict_old(self,z,lgh=(True,True,False),full_var=False):
         
         ix = self.ix
         iy = self.iy
@@ -517,8 +518,10 @@ class Predictor:
         df = x-mu[:,ix]
         cf = np.einsum('nj,nj->n',np.einsum('ni,nij->nj',df, V2),df )
 
-        V = V1*(1.0/n + cf)[:,np.newaxis,np.newaxis]        
-        #V = V1*(1.0+ 1.0/n + cf)[:,np.newaxis,np.newaxis]        
+        if full_var:
+            V = V1*(1.0+ 1.0/n + cf)[:,np.newaxis,np.newaxis]        
+        else:
+            V = V1*(1.0/n + cf)[:,np.newaxis,np.newaxis]        
 
         vi = np.array(map(np.linalg.inv,V))
         
