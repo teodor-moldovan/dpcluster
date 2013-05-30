@@ -18,6 +18,11 @@ def all_read_only(rt):
         for a in rt:
             if isinstance(a,np.ndarray):
                 a.setflags(write=False)
+            #else:
+            #    for b in a:
+            #        if isinstance(b,np.ndarray):
+            #            b.setflags(write=False)
+
     except TypeError:
         if isinstance(rt,np.ndarray):
             rt.setflags(write=False)
@@ -34,10 +39,10 @@ def cached(f):
         key = hsh(args)
         
         if not fh in cache:
-            #print f.__name__+' cache miss'
             cache[fh] = [None,None]
         
         if cache[fh][0]!= key:
+            #print f.__name__+' cache miss'
             rt = all_read_only(f(*args) )
             cache[fh] = (key,rt)
         else:

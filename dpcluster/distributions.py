@@ -204,7 +204,8 @@ class NIW(ExponentialFamilyDistribution):
         nu1 = np.einsum('nij,nj->ni',Sgi,mus)
         nu = np.hstack((nu1,-.5*Sgi.reshape(Sgi.shape[0],-1)))
 
-        t1 = -.5* np.einsum('ti,tij,tj->t',mus,Sgi,mus)
+        t1 = -.5* (Sgi*mus[:,:,np.newaxis]*mus[:,np.newaxis,:]).sum(1).sum(1)
+        #t1 = -.5* np.einsum('ti,tij,tj->t',mus,Sgi,mus)
         t2 = -.5*np.array(map(np.linalg.slogdet,Sgs))[:,1]
         return np.hstack((nu, t1[:,np.newaxis],t2[:,np.newaxis]))
 
@@ -468,14 +469,17 @@ class GaussianNIW(ConjugatePair):
         return (m,P[np.newaxis,:,:,:],None)
 
     def conditional_variance(self,x,nu,iy,ix,
-                    ret_ll_gr_hs=(True,True,False) ):
+                    ret_ll_gr_hs=(True,True,False),full_var=True ):
 
         mygx,mx,P,V1,V2,n = self.conditionals_cache(nu,iy,ix)        
 
         df = x[:,np.newaxis,:]-mx[np.newaxis,:,:]
         cf = np.einsum('nkj,nkj->nk',np.einsum('nki,kij->nkj',df, V2),df )
 
-        V = V1[np.newaxis,:,:,:]*(1.0+ 1.0/n + cf)[:,:,np.newaxis,np.newaxis]
+        if full_var:
+            V =V1[np.newaxis,:,:,:]*(1.0+ 1.0/n + cf)[:,:,np.newaxis,np.newaxis]
+        else:
+            V = V1[np.newaxis,:,:,:]*(1.0/n + cf)[:,:,np.newaxis,np.newaxis]
         
         cfg = 2*np.einsum('nki,kij->nkj',df,V2)
         
@@ -700,7 +704,7 @@ class MixtureModel(object):
 
         if ret_ll_gr_hs[1]:
             vfg  = np.einsum('nk,nkija->nija',ps2,vrg) 
-            vfg += 2*np.einsum('nka,nk,nkij->nija',psg,ps,vr)
+            vfg += 2*np.einsum('nka,nkij->nija',psg*ps[:,:,np.newaxis],vr)
 
         return vf, vfg, None
 

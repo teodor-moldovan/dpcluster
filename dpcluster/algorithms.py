@@ -313,11 +313,12 @@ class VDP(object):
 
         return vf, vfg, None
 
-    def var_cond_exp(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
+    def var_cond_exp(self,x,iy,ix,ret_ll_gr_hs = (True,False,False),
+            full_var=False):
         ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
 
         vr, vrg, trash = self.distr.conditional_variance(x,self.tau,iy,ix,
-                        ret_ll_gr_hs)
+                        ret_ll_gr_hs,full_var)
         ps2 = ps*ps
         
         vf = np.einsum('nk,nkij->nij',ps2,vr)
@@ -326,7 +327,7 @@ class VDP(object):
 
         if ret_ll_gr_hs[1]:
             vfg  = np.einsum('nk,nkija->nija',ps2,vrg) 
-            vfg += 2*np.einsum('nka,nk,nkij->nija',psg,ps,vr)
+            vfg += 2*np.einsum('nka,nkij->nija',psg*ps[:,:,np.newaxis],vr)
 
         return vf, vfg, None
 
@@ -448,12 +449,11 @@ class Predictor:
         P = np.einsum('njk,nkl->njl',B,Di)
 
         Li = A-np.einsum('nik,nlk->nil',P,B)
-        tmp = (nu - Li.shape[1] -1)
-        V1 = Li/tmp[:,np.newaxis,np.newaxis]
+        V1 = Li
         
         V2 = Di
         
-        ls = mu,P,V1,V2,n
+        ls = mu,P,V1,V2,n,nu
         gr = None
 
         
@@ -467,7 +467,7 @@ class Predictor:
             Pg = np.einsum('njka,nkl->njla',Bg,Di)
             Pg -= np.einsum('njk,nkl,nlma,nmq->njqa',B,Di,Dg,Di)
             
-            gr = (mug,Pg,None,None,None)
+            gr = (mug,Pg,None,None,None,None)
         
         return ls,gr,None
     @cached
@@ -477,8 +477,8 @@ class Predictor:
         iy = self.iy
 
         vl,gr,trs =  self.precomp(x,lgh)
-        mu,p,V1,V2,n =  vl
-        mug,pg,t1,t2,t3 =  gr
+        mu,p,V1,V2,ni,nu =  vl
+        mug,pg,t1,t2,t3,t4 =  gr
             
         df = x-mu[:,ix]
         yp = (mu[:,iy] + np.einsum('nij,nj->ni',p,df))
@@ -506,7 +506,7 @@ class Predictor:
         dx = len(ix)
         dy = len(iy)
         
-        mu,exg,V1,V2,n =  self.precomp(x,lgh)[0]
+        mu,exg,V1,V2,ni,nu =  self.precomp(x,lgh)[0]
 
         yp, ypg, trs = self.predict(x,lgh)
         
@@ -519,9 +519,9 @@ class Predictor:
         cf = np.einsum('nj,nj->n',np.einsum('ni,nij->nj',df, V2),df )
 
         if full_var:
-            V = V1*(1.0+ 1.0/n + cf)[:,np.newaxis,np.newaxis]        
+            V = V1*((1.0+ 1.0/n + cf)/(nu+1.0))[:,np.newaxis,np.newaxis]        
         else:
-            V = V1*(1.0/n + cf)[:,np.newaxis,np.newaxis]        
+            V = V1*((1.0/n + cf)/(nu+1.0))[:,np.newaxis,np.newaxis]        
 
         vi = np.array(map(np.linalg.inv,V))
         
