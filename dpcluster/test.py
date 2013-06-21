@@ -15,6 +15,10 @@ def grad_check(f,x,eps =1e-4):
     dfp = (g*dx).sum(axis= len(g.shape)-1)
     dfa = (f1-f2)
     
+    ind = np.logical_and(dfa==0,dfp==0 )
+    dfp[ind] = 1
+    dfa[ind] = 1
+
     r = dfa/dfp
     
     np.testing.assert_almost_equal(r,1,6)
@@ -328,15 +332,17 @@ class Tests(unittest.TestCase):
         ix = (2,3,4)
         x = z[:,ix]
         
-
         f = lambda x_: distr.conditional_expectation(x_,nus,iy,ix, 
                         (True,True,False) )
         
         g = lambda x_: distr.conditional_variance(x_,nus,iy,ix, 
                         (True,True,False) )
 
+        h = lambda x_: distr.conditional(x_,nus,iy,ix)[1:4]
+
         grad_check(f,x)
         grad_check(g,x)
+        grad_check(h,x)
 
 
 
@@ -380,10 +386,14 @@ class Tests(unittest.TestCase):
         x = z[:,ix]
         
         predictor = Predictor(prob,ix,iy)
-
         g = lambda x_: predictor.predict(x_,(True,True,False) )
-
         grad_check(g,x)
+
+        predictor = PredictorKL(prob,ix,iy)
+        g = lambda x_: predictor.predict(x_,(True,True,False) )
+        grad_check(g,x)
+
+
 
 if __name__ == '__main__':
     single_test = 'test_predictor'

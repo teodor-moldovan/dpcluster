@@ -531,3 +531,71 @@ class Predictor:
         return ll,xi,P,2*vi
 
         
+class PredictorKL:
+    def __init__(self,model,ix,iy):
+        self.model = model
+        self.ix = ix
+        self.iy = iy
+
+    @cached
+    def predict(self,x,lgh): 
+
+        ix = self.ix
+        iy = self.iy
+        
+        dstr,tau,taug,tsh = self.model.distr.conditional(x,
+                self.model.tau,iy,ix,lgh)
+
+        ps,psg,trash = self.model.marginal(ix).resp(x,lgh)
+        
+        taun = np.einsum('nk,nki->ni',ps,tau)
+
+        (mu,Psi,n,nu),(mug,Psig,ng,nug),trs = dstr.prior.nat2usual(taun,lgh)
+
+        yp = mu
+        if lgh[1]:
+            taung = (np.einsum('nkj,nki->nij',psg,tau) 
+                + np.einsum('nk,nkij->nij',ps,taug))
+
+            ypg = np.einsum('njk,nij->nik',taung,mug)
+        
+        v = Psi/(n * (nu - len(iy) + 1.0) )[:,np.newaxis,np.newaxis] 
+
+        return yp,ypg,v
+
+        
+    def predict_old(self,z,lgh=(True,True,False),full_var=False):
+        
+        ix = self.ix
+        iy = self.iy
+
+        x = z[:,ix]
+        y = z[:,iy]
+        dx = len(ix)
+        dy = len(iy)
+        
+        mu,exg,V1,V2,ni,nu =  self.precomp(x,lgh)[0]
+
+        yp, ypg, trs = self.predict(x,lgh)
+        
+        xi = y - yp
+
+        P = np.repeat(np.eye(dy,dy)[np.newaxis,:,:],exg.shape[0],0)
+        P = np.dstack((P,-ypg))
+
+        df = x-mu[:,ix]
+        cf = np.einsum('nj,nj->n',np.einsum('ni,nij->nj',df, V2),df )
+
+        if full_var:
+            V = V1*((1.0+ 1.0/n + cf)/(nu+1.0))[:,np.newaxis,np.newaxis]        
+        else:
+            V = V1*((1.0/n + cf)/(nu+1.0))[:,np.newaxis,np.newaxis]        
+
+        vi = np.array(map(np.linalg.inv,V))
+        
+        pr = np.einsum('nij,nj->ni',vi,xi)
+        ll = np.einsum('nj,nj->n',pr,xi)
+
+        return ll,xi,P,2*vi
+
+        

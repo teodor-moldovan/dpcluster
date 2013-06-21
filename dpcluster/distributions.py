@@ -460,6 +460,24 @@ class GaussianNIW(ConjugatePair):
 
 
     @cached
+    def conditionals_cache_bare(self,nus,i1,i2):
+         
+        mu,Psi,n,nu = self.prior.nat2usual(nus)[0]
+        my,mx = mu[:,i1],mu[:,i2]
+
+        A,B,D = Psi[:,i1,:][:,:,i1], Psi[:,i1,:][:,:,i2], Psi[:,i2,:][:,:,i2]
+
+        Di = np.array(map(np.linalg.inv,D))
+        P = np.einsum('njk,nkl->njl',B,Di)
+        #mygx = my - np.einsum('nij,nj->ni',P,mx)
+
+        Li = A-np.einsum('nik,nlk->nil',P,B)
+        
+
+        return my,mx,P,Li,Di,n,nu
+
+
+    @cached
     def conditional_expectation(self,x,nu,iy,ix, 
                     ret_ll_gr_hs=(True,True,False) ):
 
@@ -488,240 +506,47 @@ class GaussianNIW(ConjugatePair):
         return V,gr,None
 
 
-
-# not in use
-class MixtureModel(object):
-    def __init__(self,distr):
-        self.distr = distr
-    def cluster_sizes(self):
-        """:return: Data weight assigned to each cluster.
-        """
-        return (self.al -1)
-        
-        
-    def cluster_parameters(self):
-        """:return: Cluster parameters.
-        """
-        return self.tau
-
-    def ll(self,x, ret_ll_gr_hs = (True,False,False)):
-        """
-        Compute the log likelihoods (ll) of data with respect to the trained model.
-
-        :arg x: sufficient statistics of the data.
-        :arg ret_ll_gr_hs: what to return: likelihood, gradient, hessian. Derivatives taken with respect to data, not sufficient statistics. 
-        """
-
-        rt = ret_ll_gr_hs
-        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,
-             (True,rt[1],rt[2]), True)
-
-        ll = None
-        gr = None
-        hs = None
-
-        let = self.resp_cache(self.al,self.bt)
-
-        llk = llk+let 
-        np.exp(llk,llk)
-
-        se = llk.sum(1)
-        
-        if rt[0]:
-            ll = np.log(se)
-
-        if rt[1] or rt[2]:
-            p = llk/se[:,np.newaxis]
-            gr = np.einsum('nk,nki->ni',p,grk)
-        
-        if rt[2]:
-            hs1  = - gr[:,:,np.newaxis] * gr[:,np.newaxis,:]
-            hs2 = np.einsum('nk,nkij->nij',p, hsk)
-            # TODO: einsum wrong
-            hs3 = np.einsum('nk,nki,nkj->nij',p, grk, grk)
-
-            hs = hs1 + hs2 + hs3
-        
-        return (ll,gr,hs)
-
     @cached
-    def resp_cache(self,al,bt):
-        tmp = np.log(al + bt)
-        exlv  = np.log(al) - tmp
-        exlvc = np.log(bt) - tmp
-        let = exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]])
-        return let
+    def conditional(self,x,nu,iy,ix,lgh = (True,True,False)):
 
-
-    @cached
-    def pseudo_resp_cache(self,al,bt):
-        tmp = scipy.special.psi(al + bt)
-        exlv  = (scipy.special.psi(al) - tmp)
-        exlvc = (scipy.special.psi(bt) - tmp)
-
-        elt = (exlv + np.concatenate([[0],np.cumsum(exlvc)[:-1]]))
-
-
-        return elt
-
-
-    @cached
-    def resp(self,x, ret_ll_gr_hs = (True,False,False)):
-        """
-        Cluster responsabilities.
-
-        :arg x: sufficient statistics of data. 
-        """
+        my,mx,P,Psi,Lxx,n,nu = self.conditionals_cache_bare(nu,iy,ix)
         
-        cll,cgr,chs = ret_ll_gr_hs
-        p = None
-        gp = None
-        hp = None
+        df = x[:,np.newaxis,:]-mx[np.newaxis,:,:]
+        nb = 1.0/(np.einsum('nki,kij,nkj->nk',df,Lxx,df) + 1.0/n)
 
-        llk,grk,hsk = self.distr.posterior_ll(x,self.tau,(True,cgr,chs),True)
-
-        if cll or cgr: 
-            llk = llk + self.resp_cache(self.al,self.bt)   
-            llk -= llk.max(1)[:,np.newaxis] 
-            np.exp(llk,llk)
-            se = llk.sum(1)
-            p = llk/se[:,np.newaxis]
+        nub = np.tile(nu[np.newaxis,:],[nb.shape[0],1])
         
-        if cgr:
-            mn = np.einsum('nkj,nk->nj',grk,p)
-            gp = (grk - mn[:,np.newaxis,:] )*p[:,:,np.newaxis]
-
-        return (p,gp,hp)
-
-
-    @cached
-    def pseudo_resp(self,x, ret_ll_gr_hs = (True,False,False)):
+        mub = my + np.einsum('kij,nkj->nki',P,df)
+        d = len(iy)
         
-        cll,cgr,chs = ret_ll_gr_hs
-        p = None
-        gp = None
-        hp = None
-
-        grad = self.distr.prior.log_partition(self.tau,(False,True,False))[1]
-        llk = np.einsum('ki,ni->nk',grad,self.distr.sufficient_stats(x))
-
-        llk += self.pseudo_resp_cache(self.al,self.bt)   
-        llk -= llk.max(1)[:,np.newaxis] 
-        np.exp(llk,llk)
-        se = llk.sum(1)
-        p = llk/se[:,np.newaxis]
-
-        return (p,None,None)
-
-
-    def conditional_ll(self,x,cond):
-        """
-        Conditional log likelihood.
         
-        :arg x: sufficient statistics of data.
-        :arg cond: slice representing variables to condition on
-        """
+        wx = np.newaxis
+        l3 = nb
+        l4 = (nub+2+d)
+        l1 = mub*nb[:,:,wx]
+        l2 = Psi[wx,:,:,:] + mub[:,:,:,wx]*mub[:,:,wx,:]*nb[:,:,wx,wx]
 
-        ll , gr, hs    = self.ll(x,(True,True,True), usual_x=True)
-        ll_ , gr_, hs_ = self.marginal(cond).ll(x,(True,True,True),usual_x=True)
+        tau = np.dstack((l1,l2.reshape(l1.shape[0],l1.shape[1],-1),l3,l4)) 
         
-        ll -= ll_
-        gr[:,slc] -= gr_
-        #line below will fail
-        #hs -= hs_
-
-        return (ll,gr,None)
-
-    def plot_clusters(self,**kwargs):
-        """
-        Asks each cluster to plot itself. For Gaussian multidimensional clusters pass ``slc=np.array([i,j])`` as an argument to project clusters on the plane defined by the i'th and j'th coordinate.
-        """
-        sz = self.cluster_sizes()
-        self.distr.plot(self.tau, sz, **kwargs)
-
-    @cached
-    def marginal(self,slc):
+        # gradients
+        if lgh[1]:
+            l3g = - 2*(nb*nb)[:,:,np.newaxis]* np.einsum('nki,kij->nkj',df,Lxx)
+            l4g = np.zeros(l3g.shape)
+            
+            l1g = nb[:,:,wx,wx]*P[wx,:,:,:] + l3g[:,:,wx,:]*mub[:,:,:,wx]
+            
+            l2g = (mub[:,:,:,wx,wx]*mub[:,:,wx,:,wx]*l3g[:,:,wx,wx,:]
+                + P[wx,:,:,wx,:]*mub[:,:,wx,:,wx]*l3[:,:,wx,wx,wx]
+                + mub[:,:,:,wx,wx]*P[wx,:,wx,:,:]*l3[:,:,wx,wx,wx]
+                    )
+            taug =  np.concatenate((l1g,
+                    l2g.reshape(l1g.shape[0],l1g.shape[1],-1,l1g.shape[3]), 
+                    l3g[:,:,wx,:],l4g[:,:,wx,:]),axis=2)
+        else:
+            taug = None
+            
+        distr = GaussianNIW(d)
+        return distr,tau,taug,None
         
-        distr, tau = self.distr.marginal(self.tau,slc)
-        rv = type(self)(distr)
-        rv.tau = tau
-        rv.al = self.al
-        rv.bt = self.bt
         
-        return rv
-
-    @cached
-    def conditional_expectation(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
-        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
-
-        ex, exg, trash = self.distr.conditional_expectation(x,self.tau,iy,ix,
-                        ret_ll_gr_hs)
         
-        ef = np.einsum('nki,nk->ni',ex,ps)
-        efg = np.einsum('nka,nki->nia',psg,ex)+np.einsum('nk,nkia->nia',ps,exg)
-        #efg = np.einsum('nka,nki->nia',psg,ex)+np.einsum('nk,nkia->nia',ps,exg)
-
-        
-        return ef,efg,None
-        
-    def conditional_variance(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
-        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
-
-        ex, exg, trash = self.distr.conditional_expectation(x,self.tau,iy,ix,
-                        ret_ll_gr_hs)
-
-        vr, vrg, trash = self.distr.conditional_variance(x,self.tau,iy,ix,
-                        ret_ll_gr_hs)
-        
-        ef, efg, trash = self.conditional_expectation(x,iy,ix,ret_ll_gr_hs) 
-        
-        de = ex - ef[:,np.newaxis,:]
-        vt = de[:,:,:,np.newaxis]*de[:,:,np.newaxis,:]
-        vs = vt+vr
-        vf = np.einsum('nk,nkij->nij',ps,vs)
-        
-        deg = exg - efg[:,np.newaxis,:,:]
-
-        vsg  =  de[:,:,np.newaxis,:,np.newaxis] * deg[:,:,:,np.newaxis,:]
-        vsg +=  de[:,:,:,np.newaxis,np.newaxis] * deg[:,:,np.newaxis,:,:]
-        vsg += vrg
-        
-        vfg  = np.einsum('nk,nkija->nija',ps,vsg) 
-        vfg += np.einsum('nka,nkij->nija',psg,vs)
-
-        return vf, vfg, None
-
-    def var_cond_exp(self,x,iy,ix,ret_ll_gr_hs = (True,False,False)):
-        ps, psg, trash = self.marginal(ix).resp(x,ret_ll_gr_hs)
-
-        vr, vrg, trash = self.distr.conditional_variance(x,self.tau,iy,ix,
-                        ret_ll_gr_hs)
-        ps2 = ps*ps
-        
-        vf = np.einsum('nk,nkij->nij',ps2,vr)
-        
-        vfg = None
-
-        if ret_ll_gr_hs[1]:
-            vfg  = np.einsum('nk,nkija->nija',ps2,vrg) 
-            vfg += 2*np.einsum('nka,nkij->nija',psg*ps[:,:,np.newaxis],vr)
-
-        return vf, vfg, None
-
-
-# not is use
-class GaussianMixture(MixtureModel):
-    def __init__(self,d):
-        MixtureModel.__init__(self,GaussianNIW(d))
-
-    @cached
-    def marginal(self,slc):
-        
-        distr, tau = self.distr.marginal(self.tau,slc)
-        rv = type(self)(distr.prior.dim)
-        rv.tau = tau
-        rv.al = self.al
-        rv.bt = self.bt
-        
-        return rv
-
