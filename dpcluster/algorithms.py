@@ -3,6 +3,7 @@ import numpy as np
 import scipy.linalg
 import scipy.special
 from caching import cached
+import cuda_tools
 
 class VDP(object):
     """ Variational Dirichlet Process clustering algorithm following `"Variational Inference for Dirichlet Process Mixtures" by Blei et al. (2006) <http://ba.stat.cmu.edu/journal/2006/vol01/issue01/blei.pdf>`_.
@@ -599,3 +600,22 @@ class PredictorKL:
         return ll,xi,P,2*vi
 
         
+class PredictorCuda:
+    def __init__(self,nx,ny):
+        self.nx = nx
+        self.ny = ny
+
+    def parse_model(self,model):
+        self.model = model
+    def predict(self,x): 
+        # should return predicted y given x and precision matrix
+        
+        x_gpu = cuda_tools.gpuarray.to_gpu(x.astype(np.float32))
+
+        nus =  self.distr_fit(x)
+        
+        pass
+
+        
+
+

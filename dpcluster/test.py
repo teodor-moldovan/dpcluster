@@ -1,5 +1,7 @@
 import unittest
 from dpcluster import *
+import cuda_tools
+import time
 
 def grad_check(f,x,eps =1e-4):
         
@@ -395,8 +397,80 @@ class Tests(unittest.TestCase):
 
 
 
+    @unittest.skipUnless(__name__== '__main__', 'still in development')
+    def test_cuda_predictor(self):
+        data = self.data
+        n,d = data.shape 
+        prob = VDP(GaussianNIW(d), k=50,w=.4)
+        x = prob.distr.sufficient_stats(data)
+        prob.batch_learn(x, verbose = False)
+
+        #nz = 200
+        #z = np.random.normal(size = d*nz ).reshape(nz,d)
+        z = data
+        
+        iy = (0,1)
+        ix = (2,3,4)
+        x = z[:,ix]
+        
+        predictor = Predictor(prob,ix,iy)
+        nus = predictor.distr_fit(x,[True,False,False])[0]
+
+        prd = PredictorCuda(3,2)
+        prd.parse_model(prob)
+        prd.distr_fit = lambda x_ : nus
+        
+        prd.predict(x)
+        
+
+    @unittest.skipUnless(__name__== '__main__', 'still in development')
+    def test_cuda_perm(self):
+        
+        p0 = np.array(([2,1,1],[1,2,3],[3,2,1],[1,1,1]))
+        s = np.random.normal(size=4*5*3).reshape(4,5,3)
+        s = cuda_tools.gpuarray.to_gpu(s.astype(np.float32)) 
+        d = cuda_tools.gpuarray.empty_like(s)
+        d_ = cuda_tools.gpuarray.empty((s.shape[0],s.shape[2],s.shape[2]),
+                np.float32)
+
+        for it in range(10):
+            p = cuda_tools.gpuarray.to_gpu(p0.astype(np.int32)) 
+            t = time.time()
+            cuda_tools.perm_conv_batched(p)
+            cuda_tools.perm_rows_batched(p,s,d)
+            cuda_tools.perm_mat_batched(p,d_)
+            print time.time()-t
+
+    @unittest.skipUnless(__name__== '__main__', 'still in development')
+    def test_cuda_binv(self):
+        l,m = 200,32
+        so = np.random.normal(size=l*m*m).reshape(l,m,m)
+        
+        t = time.time()
+        map(np.linalg.inv,so)
+        print 'cpu: ',
+        print time.time()-t
+        
+        s = cuda_tools.gpuarray.to_gpu(so.astype(np.float32))
+        s.bptrs = cuda_tools.bptrs(s)
+        d = cuda_tools.gpuarray.empty_like(s) 
+        d.bptrs = cuda_tools.bptrs(d)
+        
+        #print np.array([map(np.linalg.inv,so)])
+        for it in range(10):
+            s.set(so.astype(np.float32))
+            print 'gpu: ',
+            t = time.time()
+            cuda_tools.binv(s,d)
+            print time.time()-t
+    
+        #print d
+        
+
+            
+
 if __name__ == '__main__':
-    single_test = 'test_predictor'
+    single_test = 'test_cuda_binv'
     if hasattr(Tests, single_test):
         dev_suite = unittest.TestSuite()
         dev_suite.addTest(Tests(single_test))
